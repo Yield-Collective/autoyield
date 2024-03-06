@@ -35,7 +35,10 @@ module.exports = {
       polygon: process.env.ETHERSCAN_API_KEY_POLYGON,
       optimisticEthereum: process.env.ETHERSCAN_API_KEY_OPTIMISM,
       arbitrumOne: process.env.ETHERSCAN_API_KEY_ARBITRUM,
-      bsc: process.env.ETHERSCAN_API_KEY_BNB
+      bsc: process.env.ETHERSCAN_API_KEY_BNB,
+
+      // testnets
+      goerli: process.env.ETHERSCAN_API_KEY_MAINNET,
     },
   },
   networks: {
@@ -64,6 +67,10 @@ module.exports = {
     bnb: {
       url: "https://bsc-dataseed.binance.org",
       chainId: 56
+    },
+    goerli: {
+      url: "https://rpc.ankr.com/eth_goerli",
+      chainId: 5
     },
     evmos: {
       url: "https://evmos-evm.publicnode.com",

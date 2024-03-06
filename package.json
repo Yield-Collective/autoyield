@@ -2,6 +2,7 @@
   "name": "compoundor",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^2.0.2",
+    "@nomicfoundation/hardhat-verify": "^2.0.4",
     "@thanpolas/univ3prices": "^3.0.2",
     "@uniswap/sdk-core": "^3.0.1",
     "@uniswap/smart-order-router": "^2.5.26",
