@@ -14,7 +14,7 @@ import "./external/uniswap/v3-core/libraries/TickMath.sol";
 import "./external/uniswap/v3-periphery/libraries/LiquidityAmounts.sol";
 import "./external/uniswap/v3-periphery/interfaces/INonfungiblePositionManager.sol";
 
-import "./ICompoundor.sol";
+import "./interfaces/ICompoundor.sol";
 
 /*                                                  __          
   _________  ____ ___  ____  ____  __  ______  ____/ /___  _____
@@ -43,7 +43,7 @@ contract Compoundor is ICompoundor, ReentrancyGuard, Ownable, Multicall {
     uint32 public override TWAPSeconds = 60;
 
     // wrapped native token address
-    address override public weth;
+    address public override weth;
 
     // uniswap v3 components
     IUniswapV3Factory public override factory;

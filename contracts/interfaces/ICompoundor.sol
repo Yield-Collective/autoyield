@@ -2,12 +2,12 @@
 pragma solidity ^0.7.6;
 pragma abicoder v2;
 
-import "./external/openzeppelin/token/ERC20/IERC20Metadata.sol";
-import "./external/openzeppelin/token/ERC721/IERC721Receiver.sol";
+import "../external/openzeppelin/token/ERC20/IERC20Metadata.sol";
+import "../external/openzeppelin/token/ERC721/IERC721Receiver.sol";
 
-import "./external/uniswap/v3-core/interfaces/IUniswapV3Factory.sol";
-import "./external/uniswap/v3-periphery/interfaces/INonfungiblePositionManager.sol";
-import "./external/uniswap/v3-periphery/interfaces/ISwapRouter.sol";
+import "../external/uniswap/v3-core/interfaces/IUniswapV3Factory.sol";
+import "../external/uniswap/v3-periphery/interfaces/INonfungiblePositionManager.sol";
+import "../external/uniswap/v3-periphery/interfaces/ISwapRouter.sol";
 
 /*                                                  __          
   _________  ____ ___  ____  ____  __  ______  ____/ /___  _____

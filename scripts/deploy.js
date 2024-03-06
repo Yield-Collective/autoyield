@@ -1,45 +1,10 @@
-require('dotenv').config()
+const deployCompoundor = require('./deploy-compoundor')
+const deployMultiCompoundor = require('./deploy-multi-compoundor')
 
-const hre = require("hardhat");
-
-const nativeTokenAddresses = {
-  "mainnet" : "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-  "polygon" : "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270",
-  "optimism" : "0x4200000000000000000000000000000000000006",
-  "arbitrum" : "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"
+const main = async () => {
+  const compoundorAddress = await deployCompoundor()
+  await deployMultiCompoundor(compoundorAddress);
 }
-
-const factoryAddress = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
-const nonfungiblePositionManagerAddress = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
-const swapRouterAddress = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-const swapRouterAddressV2 = "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"
-
-async function main() {
-
-  // set manually for each network
-  const gasPrice = 200000000000
-  const gasLimit = 6000000
-
-  const signer = new hre.ethers.Wallet(process.env.DEPLOYMENT_PRIVATE_KEY, hre.ethers.provider)
-
-  console.log("Deploying on", hre.network.name)
-
-  const nativeTokenAddress = nativeTokenAddresses[hre.network.name]
-
-  const Contract = await hre.ethers.getContractFactory("SelfCompoundor", signer);
-  
-  const contract = await Contract.deploy(nonfungiblePositionManagerAddress, swapRouterAddressV2, { gasPrice, gasLimit });
-  await contract.deployed();
-
-  //await contract.transferOwnership(process.env.MULTISIG_ACCOUNT);
-
-  console.log("Deployed at", contract.address)
-}
-
-// npx hardhat verify --network mainnet "" "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" "0x1F98431c8aD98523631AE4a59f267346ea31F984" "0xC36442b4a4522E871399CD717aBDD847Ab11FE88" "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-// npx hardhat verify --network polygon "" "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270" "0x1F98431c8aD98523631AE4a59f267346ea31F984" "0xC36442b4a4522E871399CD717aBDD847Ab11FE88" "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-// npx hardhat verify --network optimism "" "0x4200000000000000000000000000000000000006" "0x1F98431c8aD98523631AE4a59f267346ea31F984" "0xC36442b4a4522E871399CD717aBDD847Ab11FE88" "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-// npx hardhat verify --network arbitrum "" "0x82af49447d8a07e3bd95bd0d56f35241523fbab1" "0x1F98431c8aD98523631AE4a59f267346ea31F984" "0xC36442b4a4522E871399CD717aBDD847Ab11FE88" "0xE592427A0AEce92De3Edee1F18E0157C05861564"
 
 main()
   .then(() => process.exit(0))

@@ -2,16 +2,17 @@
 pragma solidity ^0.7.6;
 pragma abicoder v2;
 
-import "./ICompoundor.sol";
-                                     
-contract MultiCompoundor {
+import {ICompoundor} from "./interfaces/ICompoundor.sol";
+import {IMultiCompoundor} from "./interfaces/IMultiCompoundor.sol";
 
-    ICompoundor compoundor = ICompoundor(0x5411894842e610C4D0F6Ed4C232DA689400f94A1);
+contract MultiCompoundor is IMultiCompoundor {
+    ICompoundor public compoundor;
 
-    constructor() {
+    constructor(ICompoundor compoundor_) {
+        compoundor = compoundor_;
     }
 
-    function runConv0Swap(uint256[] calldata tokenIds) external {
+    function runConv0Swap(uint256[] calldata tokenIds) external override {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
@@ -19,7 +20,7 @@ contract MultiCompoundor {
         }
     }
     
-    function runConv1Swap(uint256[] calldata tokenIds) external {
+    function runConv1Swap(uint256[] calldata tokenIds) external override {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
@@ -27,7 +28,7 @@ contract MultiCompoundor {
         }
     }
 
-    function runConv0NoSwap(uint256[] calldata tokenIds) external {
+    function runConv0NoSwap(uint256[] calldata tokenIds) external override {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
@@ -35,7 +36,7 @@ contract MultiCompoundor {
         }
     }
     
-    function runConv1NoSwap(uint256[] calldata tokenIds) external {
+    function runConv1NoSwap(uint256[] calldata tokenIds) external override {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
