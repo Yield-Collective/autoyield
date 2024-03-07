@@ -16,7 +16,7 @@ import "./external/uniswap/v3-periphery/interfaces/INonfungiblePositionManager.s
 
 import "./interfaces/ICompoundor.sol";
 import { AutoRange } from  "./lib/AutoRange.sol";
-import { AutoExit } from "lib/AutoExit.sol";
+import { AutoExit } from "./lib/AutoExit.sol";
 
 /*                                                  __          
   _________  ____ ___  ____  ____  __  ______  ____/ /___  _____
