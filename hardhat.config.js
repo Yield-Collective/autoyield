@@ -1,6 +1,6 @@
 require('dotenv').config()
-
 require("@nomicfoundation/hardhat-toolbox");
+require('@nomicfoundation/hardhat-foundry')
 
 task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
   const accounts = await hre.ethers.getSigners();
@@ -76,5 +76,8 @@ module.exports = {
       url: "https://evmos-evm.publicnode.com",
       chainId: 9001
     }
-  }
+  },
+  paths: {
+    sources: "./src"
+  },
 };

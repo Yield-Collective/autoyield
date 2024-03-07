@@ -15,6 +15,7 @@ import "./external/uniswap/v3-periphery/libraries/LiquidityAmounts.sol";
 import "./external/uniswap/v3-periphery/interfaces/INonfungiblePositionManager.sol";
 
 import "./interfaces/ICompoundor.sol";
+import "./lib/AutoRange.sol";
 
 /*                                                  __          
   _________  ____ ___  ____  ____  __  ______  ____/ /___  _____
@@ -23,7 +24,7 @@ import "./interfaces/ICompoundor.sol";
 \___/\____/_/ /_/ /_/ .___/\____/\__,_/_/ /_/\__,_/\____/_/     
                    /_/
 */                                        
-contract Compoundor is ICompoundor, ReentrancyGuard, Ownable, Multicall {
+contract Compoundor is ICompoundor, ReentrancyGuard, Ownable, Multicall, AutoRange {
 
     using SafeMath for uint256;
 
