@@ -1,37 +1,25 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.7.0;
+pragma abicoder v2;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/SafeCast.sol";
 
-import "v3-core/interfaces/IUniswapV3Factory.sol";
-import "v3-core/interfaces/IUniswapV3Pool.sol";
-import "v3-core/libraries/TickMath.sol";
-import "v3-core/libraries/FullMath.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import "@uniswap/v3-core/contracts/libraries/FullMath.sol";
 
-import "v3-periphery/interfaces/INonfungiblePositionManager.sol";
-import "v3-periphery/interfaces/external/IWETH9.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol";
 
 abstract contract Automator is Ownable {
-
     uint256 internal constant Q64 = 2 ** 64;
     uint256 internal constant Q96 = 2 ** 96;
 
     uint32 public constant MIN_TWAP_SECONDS = 60; // 1 minute
     uint32 public constant MAX_TWAP_TICK_DIFFERENCE = 200; // 2%
-
-    error NotConfigured();
-    error NotReady();
-    error Unauthorized();
-    error InvalidConfig();
-    error TWAPCheckFailed();
-    error EtherSendFailed();
-    error NotWETH();
-    error SwapFailed();
-    error SlippageError();
-    error LiquidityChanged();
-    error ExceedsMaxReward();
 
     INonfungiblePositionManager public immutable nonfungiblePositionManager;
     IUniswapV3Factory public immutable factory;
@@ -56,7 +44,6 @@ abstract contract Automator is Ownable {
     uint8 public swapRouterIndex; // default is 0
 
     constructor(INonfungiblePositionManager npm, address _operator, address _withdrawer, uint32 _TWAPSeconds, uint16 _maxTWAPTickDifference, address[] memory _swapRouterOptions) {
-
         nonfungiblePositionManager = npm;
         weth = IWETH9(npm.WETH9());
         factory = IUniswapV3Factory(npm.factory());
@@ -82,7 +69,7 @@ abstract contract Automator is Ownable {
 
         // only allow preconfigured routers
         if (_swapRouterIndex > 2) {
-            revert InvalidConfig();
+            revert('InvalidConfig');
         }
 
         emit SwapRouterChanged(_swapRouterIndex);
@@ -113,10 +100,10 @@ abstract contract Automator is Ownable {
      */
     function setTWAPConfig(uint16 _maxTWAPTickDifference, uint32 _TWAPSeconds) public onlyOwner {
         if (_TWAPSeconds < MIN_TWAP_SECONDS) {
-            revert InvalidConfig();
+            revert('InvalidConfig');
         }
         if (_maxTWAPTickDifference > MAX_TWAP_TICK_DIFFERENCE) {
-            revert InvalidConfig();
+            revert('InvalidConfig');
         }
         emit TWAPConfigChanged(_TWAPSeconds, _maxTWAPTickDifference);
         TWAPSeconds = _TWAPSeconds;
@@ -132,7 +119,7 @@ abstract contract Automator is Ownable {
     function withdrawBalances(address[] calldata tokens, address to) external {
 
         if (msg.sender != withdrawer) {
-            revert Unauthorized();
+            revert('Unauthorized');
         }
 
         uint i;
@@ -152,14 +139,14 @@ abstract contract Automator is Ownable {
     function withdrawETH(address to) external {
 
         if (msg.sender != withdrawer) {
-            revert Unauthorized();
+            revert('Unauthorized');
         }
 
         uint256 balance = address(this).balance;
         if (balance > 0) {
             (bool sent,) = to.call{value: balance}("");
             if (!sent) {
-                revert EtherSendFailed();
+                revert('EtherSendFailed');
             }
         }
     }
@@ -173,7 +160,7 @@ abstract contract Automator is Ownable {
 
         // check if current tick not too far from TWAP
         if (!_hasMaxTWAPTickDifference(pool, twapPeriod, currentTick, maxTickDifference)) {
-            revert TWAPCheckFailed();
+            revert('TWAPCheckFailed');
         }
 
         // calculate min output price price and percentage
@@ -204,7 +191,7 @@ abstract contract Automator is Ownable {
             address swapRouter = swapRouterIndex == 0 ? swapRouterOption0 : (swapRouterIndex == 1 ? swapRouterOption1 : swapRouterOption2);
             (bool success,) = swapRouter.call(data);
             if (!success) {
-                revert SwapFailed();
+                revert('SwapFailed');
             }
 
             // remove any remaining allowance
@@ -218,7 +205,7 @@ abstract contract Automator is Ownable {
 
             // amountMin slippage check
             if (amountOutDelta < amountOutMin) {
-                revert SlippageError();
+                revert('SlippageError');
             }
         }
     }
@@ -296,7 +283,7 @@ abstract contract Automator is Ownable {
             weth.withdraw(amount);
             (bool sent, ) = to.call{value: amount}("");
             if (!sent) {
-                revert EtherSendFailed();
+                revert('EtherSendFailed');
             }
         } else {
             SafeERC20.safeTransfer(token, to, amount);
@@ -306,7 +293,7 @@ abstract contract Automator is Ownable {
     // needed for WETH unwrapping
     receive() external payable {
         if (msg.sender != address(weth)) {
-            revert NotWETH();
+            revert('NotWETH');
         }
     }
 }

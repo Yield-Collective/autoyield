@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.7.0;
+pragma abicoder v2;
 
 import "./Automator.sol";
 
@@ -7,11 +8,7 @@ import "./Automator.sol";
 /// @notice Lets a v3 position to be automatically removed (limit order) or swapped to the opposite token (stop loss order) when it reaches a certain tick.
 /// A revert controlled bot (operator) is responsible for the execution of optimized swaps (using external swap router)
 /// Positions need to be approved (approve or setApprovalForAll) for the contract and configured with configToken method
-contract AutoExit is Automator {
-
-    error NoLiquidity();
-    error MissingSwapData();
-
+abstract contract AutoExit is Automator {
     event Executed(
         uint256 indexed tokenId,
         address account,
@@ -21,7 +18,7 @@ contract AutoExit is Automator {
         address token0,
         address token1
     );
-    event PositionConfigured(
+    event ExitPositionConfigured(
         uint256 indexed tokenId,
         bool isActive,
         bool token0Swap,
@@ -34,12 +31,8 @@ contract AutoExit is Automator {
         uint64 maxRewardX64
     );
 
-    constructor(INonfungiblePositionManager _npm, address _operator, address _withdrawer, uint32 _TWAPSeconds, uint16 _maxTWAPTickDifference, address[] memory _swapRouterOptions)
-    Automator(_npm, _operator, _withdrawer, _TWAPSeconds, _maxTWAPTickDifference, _swapRouterOptions) {
-    }
-
     // define how stoploss / limit should be handled
-    struct PositionConfig {
+    struct ExitPositionConfig {
         bool isActive; // if position is active
         // should swap token to other token when triggered
         bool token0Swap;
@@ -55,10 +48,10 @@ contract AutoExit is Automator {
     }
 
     // configured tokens
-    mapping (uint256 => PositionConfig) public positionConfigs;
+    mapping (uint256 => ExitPositionConfig) public exitPositionConfigs;
 
     /// @notice params for execute()
-    struct ExecuteParams {
+    struct ExitExecuteParams {
         uint256 tokenId; // tokenid to process
         bytes swapData; // if its a swap order - must include swap data
         uint128 liquidity; // liquidity the calculations are based on
@@ -68,7 +61,7 @@ contract AutoExit is Automator {
         uint64 rewardX64; // which reward will be used for protocol, can be max configured amount (considering onlyFees)
     }
 
-    struct ExecuteState {
+    struct ExitExecuteState {
         address token0;
         address token1;
         uint24 fee;
@@ -95,21 +88,21 @@ contract AutoExit is Automator {
      * Can only be called only from configured operator account
      * Swap needs to be done with max price difference from current pool price - otherwise reverts
      */
-    function execute(ExecuteParams calldata params) external {
+    function execute(ExitExecuteParams calldata params) external {
 
         if (!operators[msg.sender]) {
-            revert Unauthorized();
+            revert('Unauthorized');
         }
 
-        ExecuteState memory state;
-        PositionConfig memory config = positionConfigs[params.tokenId];
+        ExitExecuteState memory state;
+        ExitPositionConfig memory config = exitPositionConfigs[params.tokenId];
 
         if (!config.isActive) {
-            revert NotConfigured();
+            revert('NotConfigured');
         }
 
         if (config.onlyFees && params.rewardX64 > config.maxRewardX64 || !config.onlyFees && params.rewardX64 > config.maxRewardX64) {
-            revert ExceedsMaxReward();
+            revert('ExceedsMaxReward');
         }
 
         // get position info
@@ -117,10 +110,10 @@ contract AutoExit is Automator {
 
         // so can be executed only once
         if (state.liquidity == 0) {
-            revert NoLiquidity();
+            revert('NoLiquidity');
         }
         if (state.liquidity != params.liquidity) {
-            revert LiquidityChanged();
+            revert('LiquidityChanged');
         }
 
         state.pool = _getPool(state.token0, state.token1, state.fee);
@@ -128,7 +121,7 @@ contract AutoExit is Automator {
 
         // not triggered
         if (config.token0TriggerTick <= state.tick && state.tick < config.token1TriggerTick) {
-            revert NotReady();
+            revert('NotReady');
         }
 
         state.isAbove = state.tick >= config.token1TriggerTick;
@@ -140,7 +133,7 @@ contract AutoExit is Automator {
         // swap to other token
         if (state.isSwap) {
             if (params.swapData.length == 0) {
-                revert MissingSwapData();
+                revert('MissingSwapData');
             }
 
             // reward is taken before swap - if from fees only
@@ -182,8 +175,8 @@ contract AutoExit is Automator {
         }
 
         // delete config for position
-        delete positionConfigs[params.tokenId];
-        emit PositionConfigured(params.tokenId, false, false, false, 0, 0, 0, 0, false, 0);
+        delete exitPositionConfigs[params.tokenId];
+        emit ExitPositionConfigured(params.tokenId, false, false, false, 0, 0, 0, 0, false, 0);
 
         // log event
         emit Executed(params.tokenId, msg.sender, state.isSwap, state.amount0, state.amount1, state.token0, state.token1);
@@ -191,21 +184,21 @@ contract AutoExit is Automator {
 
     // function to configure a token to be used with this runner
     // it needs to have approvals set for this contract beforehand
-    function configToken(uint256 tokenId, PositionConfig calldata config) external {
+    function configToken(uint256 tokenId, ExitPositionConfig calldata config) external {
         address owner = nonfungiblePositionManager.ownerOf(tokenId);
         if (owner != msg.sender) {
-            revert Unauthorized();
+            revert('Unauthorized');
         }
 
         if (config.isActive) {
             if (config.token0TriggerTick >= config.token1TriggerTick) {
-                revert InvalidConfig();
+                revert('InvalidConfig');
             }
         }
 
-        positionConfigs[tokenId] = config;
+        exitPositionConfigs[tokenId] = config;
 
-        emit PositionConfigured(
+        emit ExitPositionConfigured(
             tokenId,
             config.isActive,
             config.token0Swap,

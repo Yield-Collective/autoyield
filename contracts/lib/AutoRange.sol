@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.7.0;
+pragma abicoder v2;
 
 import "./Automator.sol";
 
@@ -7,17 +8,12 @@ import "./Automator.sol";
 /// @notice Allows operator of AutoRange contract (Revert controlled bot) to change range for configured positions
 /// Positions need to be approved (setApprovalForAll) for the contract and configured with configToken method
 /// When executed a new position is created and automatically configured the same way as the original position
-contract AutoRange is Automator {
-
-    error SameRange();
-    error NotSupportedFeeTier();
-    error SwapAmountTooLarge();
-
+abstract contract AutoRange is Automator {
     event RangeChanged(
         uint256 indexed oldTokenId,
         uint256 indexed newTokenId
     );
-    event PositionConfigured(
+    event RangePositionConfigured(
         uint256 indexed tokenId,
         int32 lowerTickLimit,
         int32 upperTickLimit,
@@ -29,13 +25,9 @@ contract AutoRange is Automator {
         uint64 maxRewardX64
     );
 
-    constructor(INonfungiblePositionManager _npm, address _operator, address _withdrawer, uint32 _TWAPSeconds, uint16 _maxTWAPTickDifference, address[] memory _swapRouterOptions)
-    Automator(_npm, _operator, _withdrawer, _TWAPSeconds, _maxTWAPTickDifference, _swapRouterOptions) {
-    }
-
     // defines when and how a position can be changed by operator
     // when a position is adjusted config for the position is cleared and copied to the newly created position
-    struct PositionConfig {
+    struct RangePositionConfig {
         // needs more than int24 because it can be [-type(uint24).max,type(uint24).max]
         int32 lowerTickLimit; // if negative also in-range positions may be adjusted / if 0 out of range positions may be adjusted
         int32 upperTickLimit; // if negative also in-range positions may be adjusted / if 0 out of range positions may be adjusted
@@ -48,10 +40,10 @@ contract AutoRange is Automator {
     }
 
     // configured tokens
-    mapping (uint256 => PositionConfig) public positionConfigs;
+    mapping (uint256 => RangePositionConfig) public rangePositionConfigs;
 
     /// @notice params for execute()
-    struct ExecuteParams {
+    struct RangeExecuteParams {
         uint256 tokenId;
         bool swap0To1;
         uint256 amountIn; // if this is set to 0 no swap happens
@@ -63,7 +55,7 @@ contract AutoRange is Automator {
         uint64 rewardX64;  // which reward will be used for protocol, can be max configured amount (considering onlyFees)
     }
 
-    struct ExecuteState {
+    struct RangeExecuteState {
         address owner;
         address currentOwner;
         IUniswapV3Pool pool;
@@ -102,28 +94,28 @@ contract AutoRange is Automator {
      * Can only be called only from configured operator account
      * Swap needs to be done with max price difference from current pool price - otherwise reverts
      */
-    function execute(ExecuteParams calldata params) external {
+    function execute(RangeExecuteParams calldata params) external {
 
         if (!operators[msg.sender]) {
-            revert Unauthorized();
+            revert('Unauthorized');
         }
 
-        ExecuteState memory state;
-        PositionConfig memory config = positionConfigs[params.tokenId];
+        RangeExecuteState memory state;
+        RangePositionConfig memory config = rangePositionConfigs[params.tokenId];
 
         if (config.lowerTickDelta == config.upperTickDelta) {
-            revert NotConfigured();
+            revert('NotConfigured');
         }
 
         if (config.onlyFees && params.rewardX64 > config.maxRewardX64 || !config.onlyFees && params.rewardX64 > config.maxRewardX64) {
-            revert ExceedsMaxReward();
+            revert('ExceedsMaxReward');
         }
 
         // get position info
         (,, state.token0, state.token1, state.fee, state.tickLower, state.tickUpper, state.liquidity, , , , ) =  nonfungiblePositionManager.positions(params.tokenId);
 
         if (state.liquidity != params.liquidity) {
-            revert LiquidityChanged();
+            revert('LiquidityChanged');
         }
 
         (state.amount0, state.amount1, state.feeAmount0, state.feeAmount1) = _decreaseFullLiquidityAndCollect(params.tokenId, state.liquidity, params.amountRemoveMin0, params.amountRemoveMin1, params.deadline);
@@ -137,7 +129,7 @@ contract AutoRange is Automator {
         }
 
         if (params.swap0To1 && params.amountIn > state.amount0 || !params.swap0To1 && params.amountIn > state.amount1) {
-            revert SwapAmountTooLarge();
+            revert('SwapAmountTooLarge');
         }
 
         // get pool info
@@ -153,7 +145,7 @@ contract AutoRange is Automator {
 
             // check if new range same as old range
             if (baseTick + config.lowerTickDelta == state.tickLower && baseTick + config.upperTickDelta == state.tickUpper) {
-                revert SameRange();
+                revert('SameRange');
             }
 
             (state.amountInDelta, state.amountOutDelta) = _swap(params.swap0To1 ? IERC20(state.token0) : IERC20(state.token1), params.swap0To1 ? IERC20(state.token1) : IERC20(state.token0), params.amountIn, state.amountOutMin, params.swapData);
@@ -170,8 +162,8 @@ contract AutoRange is Automator {
                     address(state.token0),
                     address(state.token1),
                     state.fee,
-                    SafeCast.toInt24(baseTick + config.lowerTickDelta), // reverts if out of valid range
-                    SafeCast.toInt24(baseTick + config.upperTickDelta), // reverts if out of valid range
+                    int24(baseTick + config.lowerTickDelta), // reverts if out of valid range
+                    int24(baseTick + config.upperTickDelta), // reverts if out of valid range
                     state.maxAddAmount0,
                     state.maxAddAmount1,
                     0,
@@ -213,8 +205,8 @@ contract AutoRange is Automator {
             }
 
             // copy token config for new token
-            positionConfigs[state.newTokenId] = config;
-            emit PositionConfigured(
+            rangePositionConfigs[state.newTokenId] = config;
+            emit RangePositionConfigured(
                 state.newTokenId,
                 config.lowerTickLimit,
                 config.upperTickLimit,
@@ -227,32 +219,32 @@ contract AutoRange is Automator {
             );
 
             // delete config for old position
-            delete positionConfigs[params.tokenId];
-            emit PositionConfigured(params.tokenId, 0, 0, 0, 0, 0, 0, false, 0);
+            delete rangePositionConfigs[params.tokenId];
+            emit RangePositionConfigured(params.tokenId, 0, 0, 0, 0, 0, 0, false, 0);
 
             emit RangeChanged(params.tokenId, state.newTokenId);
 
         } else {
-            revert NotReady();
+            revert('NotReady');
         }
     }
 
     // function to configure a token to be used with this runner
     // it needs to have approvals set for this contract beforehand
-    function configToken(uint256 tokenId, PositionConfig calldata config) external {
+    function configToken(uint256 tokenId, RangePositionConfig calldata config) external {
         address owner = nonfungiblePositionManager.ownerOf(tokenId);
         if (owner != msg.sender) {
-            revert Unauthorized();
+            revert('Unauthorized');
         }
 
         // lower tick must be always below or equal to upper tick - if they are equal - range adjustment is deactivated
         if (config.lowerTickDelta > config.upperTickDelta) {
-            revert InvalidConfig();
+            revert('InvalidConfig');
         }
 
-        positionConfigs[tokenId] = config;
+        rangePositionConfigs[tokenId] = config;
 
-        emit PositionConfigured(
+        emit RangePositionConfigured(
             tokenId,
             config.lowerTickLimit,
             config.upperTickLimit,
@@ -276,7 +268,7 @@ contract AutoRange is Automator {
         } else {
             int24 spacing = factory.feeAmountTickSpacing(fee);
             if (spacing <= 0) {
-                revert NotSupportedFeeTier();
+                revert('NotSupportedFeeTier');
             }
             return spacing;
         }

@@ -1,6 +1,5 @@
 require('dotenv').config()
 require("@nomicfoundation/hardhat-toolbox");
-require('@nomicfoundation/hardhat-foundry')
 
 task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
   const accounts = await hre.ethers.getSigners();
@@ -22,6 +21,11 @@ module.exports = {
   },
   solidity: {
     version: "0.7.6",
+    // compilers: [
+    //   { version: "0.8.20" },
+    //   { version: "0.7.6" },
+    //   { version: "0.6.6" },
+    // ],
     settings: {
       optimizer: {
         enabled: true,
@@ -76,8 +80,5 @@ module.exports = {
       url: "https://evmos-evm.publicnode.com",
       chainId: 9001
     }
-  },
-  paths: {
-    sources: "./src"
-  },
+  }
 };

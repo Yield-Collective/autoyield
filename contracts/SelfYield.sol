@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.7.6;
+pragma solidity ^0.7.0;
 pragma abicoder v2;
 
-import "./external/openzeppelin/access/Ownable.sol";
-import "./external/openzeppelin/token/ERC20/SafeERC20.sol";
-import "./external/openzeppelin/math/SafeMath.sol";
-import "./external/openzeppelin/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
 
-import "./external/uniswap/v3-core/interfaces/IUniswapV3Factory.sol";
-import "./external/uniswap/v3-core/interfaces/IUniswapV3Pool.sol";
-import "./external/uniswap/v3-core/libraries/TickMath.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
 
-import "./external/uniswap/v3-periphery/libraries/LiquidityAmounts.sol";
-import "./external/uniswap/v3-periphery/interfaces/INonfungiblePositionManager.sol";
-import "./external/uniswap/v3-periphery/interfaces/IV3SwapRouter.sol";
+import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
+import "@uniswap/swap-router-contracts/contracts/interfaces/IV3SwapRouter.sol";
 
 /**
  * @title SelfCompoundor
@@ -22,7 +22,7 @@ import "./external/uniswap/v3-periphery/interfaces/IV3SwapRouter.sol";
  * Simplified design with protocol rewards kept in the contract, to be withdrawn by the contract owner.
  * Leftover tokens are always returned to owner
  */
-contract SelfCompoundor is Ownable, ReentrancyGuard {
+contract SelfYield is Ownable, ReentrancyGuard {
 
     using SafeMath for uint256;
 

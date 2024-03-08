@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.7.6;
+pragma solidity ^0.7.0;
 pragma abicoder v2;
 
-import {ICompoundor} from "./interfaces/ICompoundor.sol";
-import {IMultiCompoundor} from "./interfaces/IMultiCompoundor.sol";
+import {IAutoYield} from "./interfaces/IAutoYield.sol";
+import {IMultiYield} from "./interfaces/IMultiYield.sol";
 
-contract MultiCompoundor is IMultiCompoundor {
-    ICompoundor public compoundor;
+contract MultiYield is IMultiYield {
+    IAutoYield public compoundor;
 
-    constructor(ICompoundor compoundor_) {
+    constructor(IAutoYield compoundor_) {
         compoundor = compoundor_;
     }
 
@@ -16,7 +16,7 @@ contract MultiCompoundor is IMultiCompoundor {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
-           compoundor.autoCompound(ICompoundor.AutoCompoundParams(tokenIds[i], ICompoundor.RewardConversion.TOKEN_0, false, true));
+           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IAutoYield.RewardConversion.TOKEN_0, false, true));
         }
     }
     
@@ -24,7 +24,7 @@ contract MultiCompoundor is IMultiCompoundor {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
-           compoundor.autoCompound(ICompoundor.AutoCompoundParams(tokenIds[i], ICompoundor.RewardConversion.TOKEN_1, false, true));
+           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IAutoYield.RewardConversion.TOKEN_1, false, true));
         }
     }
 
@@ -32,7 +32,7 @@ contract MultiCompoundor is IMultiCompoundor {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
-           compoundor.autoCompound(ICompoundor.AutoCompoundParams(tokenIds[i], ICompoundor.RewardConversion.TOKEN_0, false, false));
+           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IAutoYield.RewardConversion.TOKEN_0, false, false));
         }
     }
     
@@ -40,7 +40,7 @@ contract MultiCompoundor is IMultiCompoundor {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
-           compoundor.autoCompound(ICompoundor.AutoCompoundParams(tokenIds[i], ICompoundor.RewardConversion.TOKEN_1, false, false));
+           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IAutoYield.RewardConversion.TOKEN_1, false, false));
         }
     }
 }
