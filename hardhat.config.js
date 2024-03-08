@@ -1,5 +1,4 @@
 require('dotenv').config()
-
 require("@nomicfoundation/hardhat-toolbox");
 
 task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
@@ -22,6 +21,11 @@ module.exports = {
   },
   solidity: {
     version: "0.7.6",
+    // compilers: [
+    //   { version: "0.8.20" },
+    //   { version: "0.7.6" },
+    //   { version: "0.6.6" },
+    // ],
     settings: {
       optimizer: {
         enabled: true,

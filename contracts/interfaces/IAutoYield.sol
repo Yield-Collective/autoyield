@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.7.6;
+pragma solidity ^0.7.0;
 pragma abicoder v2;
 
-import "../external/openzeppelin/token/ERC20/IERC20Metadata.sol";
-import "../external/openzeppelin/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
-import "../external/uniswap/v3-core/interfaces/IUniswapV3Factory.sol";
-import "../external/uniswap/v3-periphery/interfaces/INonfungiblePositionManager.sol";
-import "../external/uniswap/v3-periphery/interfaces/ISwapRouter.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol";
 
 /*                                                  __          
   _________  ____ ___  ____  ____  __  ______  ____/ /___  _____
@@ -16,11 +17,11 @@ import "../external/uniswap/v3-periphery/interfaces/ISwapRouter.sol";
 \___/\____/_/ /_/ /_/ .___/\____/\__,_/_/ /_/\__,_/\____/_/     
                    /_/
 */  
-interface ICompoundor is IERC721Receiver {
+interface IAutoYield is IERC721Receiver {
    
     // config changes
     event RewardUpdated(address account, uint64 totalRewardX64, uint64 compounderRewardX64);
-    event TWAPConfigUpdated(address account, uint32 maxTWAPTickDifference, uint32 TWAPSeconds);
+    event TWAPConfigUpdated(address account, uint16 maxTWAPTickDifference, uint32 TWAPSeconds);
 
     // token movements
     event TokenDeposited(address account, uint256 tokenId);
@@ -43,14 +44,95 @@ interface ICompoundor is IERC721Receiver {
         address token1
     );
 
+    event RangeChanged(
+        uint256 indexed oldTokenId,
+        uint256 indexed newTokenId
+    );
+    event RangePositionConfigured(
+        uint256 indexed tokenId,
+        int32 lowerTickLimit,
+        int32 upperTickLimit,
+        int32 lowerTickDelta,
+        int32 upperTickDelta,
+        uint64 token0SlippageX64,
+        uint64 token1SlippageX64,
+        bool onlyFees,
+        uint64 maxRewardX64
+    );
+    // admin events
+    event OperatorChanged(address newOperator, bool active);
+    event WithdrawerChanged(address newWithdrawer);
+    event TWAPConfigChanged(uint32 TWAPSeconds, uint16 maxTWAPTickDifference);
+    event SwapRouterChanged(uint8 swapRouterIndex);
+
+    // defines when and how a position can be changed by operator
+    // when a position is adjusted config for the position is cleared and copied to the newly created position
+    struct RangePositionConfig {
+        // needs more than int24 because it can be [-type(uint24).max,type(uint24).max]
+        int32 lowerTickLimit; // if negative also in-range positions may be adjusted / if 0 out of range positions may be adjusted
+        int32 upperTickLimit; // if negative also in-range positions may be adjusted / if 0 out of range positions may be adjusted
+        int32 lowerTickDelta; // this amount is added to current tick (floored to tickspacing) to define lowerTick of new position
+        int32 upperTickDelta; // this amount is added to current tick (floored to tickspacing) to define upperTick of new position
+        uint64 token0SlippageX64; // max price difference from current pool price for swap / Q64 for token0
+        uint64 token1SlippageX64; // max price difference from current pool price for swap / Q64 for token1
+        bool onlyFees; // if only fees maybe used for protocol reward
+        uint64 maxRewardX64; // max allowed reward percentage of fees or full position
+    }
+
+    /// @notice params for execute()
+    struct RangeExecuteParams {
+        uint256 tokenId;
+        bool swap0To1;
+        uint256 amountIn; // if this is set to 0 no swap happens
+        bytes swapData;
+        uint128 liquidity; // liquidity the calculations are based on
+        uint256 amountRemoveMin0; // min amount to be removed from liquidity
+        uint256 amountRemoveMin1; // min amount to be removed from liquidity
+        uint256 deadline; // for uniswap operations - operator promises fair value
+        uint64 rewardX64;  // which reward will be used for protocol, can be max configured amount (considering onlyFees)
+    }
+
+    struct RangeExecuteState {
+        address owner;
+        address currentOwner;
+        IUniswapV3Pool pool;
+        address token0;
+        address token1;
+        uint24 fee;
+        int24 tickLower;
+        int24 tickUpper;
+        int24 currentTick;
+
+        uint256 amount0;
+        uint256 amount1;
+        uint256 feeAmount0;
+        uint256 feeAmount1;
+
+        uint256 maxAddAmount0;
+        uint256 maxAddAmount1;
+
+        uint256 amountAdded0;
+        uint256 amountAdded1;
+
+        uint128 liquidity;
+
+        uint256 protocolReward0;
+        uint256 protocolReward1;
+        uint256 amountOutMin;
+        uint256 amountInDelta;
+        uint256 amountOutDelta;
+
+        uint256 newTokenId;
+    }
+
     /// @notice The weth address
-    function weth() external view returns (address);
+    function weth() external view returns (IWETH9);
 
     /// @notice The factory address with which this staking contract is compatible
     function factory() external view returns (IUniswapV3Factory);
 
     /// @notice The nonfungible position manager address with which this staking contract is compatible
-    function nonfungiblePositionManager() external view returns (INonfungiblePositionManager);
+    function npm() external view returns (INonfungiblePositionManager);
 
     /// @notice The nonfungible position manager address with which this staking contract is compatible
     function swapRouter() external view returns (ISwapRouter);
@@ -62,7 +144,7 @@ interface ICompoundor is IERC721Receiver {
     function compounderRewardX64() external view returns (uint64);
 
     /// @notice Max tick difference between TWAP tick and current price to allow operations
-    function maxTWAPTickDifference() external view returns (uint32);
+    function maxTWAPTickDifference() external view returns (uint16);
 
     /// @notice Number of seconds to use for TWAP calculation
     function TWAPSeconds() external view returns (uint32);
@@ -73,13 +155,6 @@ interface ICompoundor is IERC721Receiver {
      * @param _compounderRewardX64 new compounder reward
      */
     function setReward(uint64 _totalRewardX64, uint64 _compounderRewardX64) external;
-
-    /**
-     * @notice Management method to change the max tick difference from twap to allow swaps (onlyOwner)
-     * @param _maxTWAPTickDifference new max tick difference
-     * @param _TWAPSeconds new TWAP period seconds
-     */
-    function setTWAPConfig(uint32 _maxTWAPTickDifference, uint32 _TWAPSeconds) external;
 
     /// @notice Owner of a managed NFT
     function ownerOf(uint256 tokenId) external view returns (address owner);
@@ -106,15 +181,22 @@ interface ICompoundor is IERC721Receiver {
      * @notice Removes a NFT from the protocol and safe transfers it to address to
      * @param tokenId TokenId of token to remove
      * @param to Address to send to
-     * @param withdrawBalances When true sends the available balances for token0 and token1 as well
+     * @param withdrawBalances_ When true sends the available balances for token0 and token1 as well
      * @param data data which is sent with the safeTransferFrom call (optional)
      */
     function withdrawToken(
         uint256 tokenId,
         address to,
-        bool withdrawBalances,
+        bool withdrawBalances_,
         bytes memory data
     ) external;
+
+    /**
+     * @notice Removes balances
+     * @param tokens Array of Address of token to remove
+     * @param to Address to send to)
+     */
+    function withdrawBalances(address[] calldata tokens, address to) external;
 
     /**
      * @notice Withdraws token balance for a address and token
