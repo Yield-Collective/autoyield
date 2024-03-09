@@ -63,7 +63,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     mapping(address => uint256[]) public override accountTokens;
     mapping(address => mapping(address => uint256)) public override accountBalances;
 
-    constructor(INonfungiblePositionManager _nonfungiblePositionManager, ISwapRouter _swapRouter, address _operator, address _withdrawer, uint32 _TWAPSeconds, uint16 _maxTWAPTickDifference)
+    constructor(INonfungiblePositionManager _nonfungiblePositionManager, ISwapRouter _swapRouter)
     {
         npm = _nonfungiblePositionManager;
         swapRouter = _swapRouter;
@@ -72,11 +72,11 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
 
         swapRouterReBalance = address(_swapRouter);
 
-        emit SwapRouterChanged(swapRouterReBalance);
+        setOperator(msg.sender, true);
+        setWithdrawer(msg.sender);
 
-        setOperator(_operator, true);
-        setWithdrawer(_withdrawer);
-        setTWAPConfig(_maxTWAPTickDifference, _TWAPSeconds);
+        emit SwapRouterChanged(swapRouterReBalance);
+        emit TWAPConfigUpdated(msg.sender, maxTWAPTickDifference, TWAPSeconds);
     }
 
     /**
