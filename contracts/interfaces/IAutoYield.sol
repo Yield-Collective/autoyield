@@ -158,6 +158,23 @@ interface IAutoYield is IERC721Receiver {
         bool doSwap;
     }
 
+    // state used during autocompound execution
+    struct AutoCompoundState {
+        uint256 amount0;
+        uint256 amount1;
+        uint256 maxAddAmount0;
+        uint256 maxAddAmount1;
+        uint256 amount0Fees;
+        uint256 amount1Fees;
+        uint256 priceX96;
+        address tokenOwner;
+        address token0;
+        address token1;
+        uint24 fee;
+        int24 tickLower;
+        int24 tickUpper;
+    }
+
     /// @notice The weth address
     function weth() external view returns (IWETH9);
 
