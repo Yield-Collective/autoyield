@@ -82,7 +82,7 @@ interface IAutoYield is IERC721Receiver {
         uint64 maxRewardX64; // max allowed reward percentage of fees or full position
     }
 
-    /// @notice params for execute()
+    /// @notice params for reBalance()
     struct RangeExecuteParams {
         uint256 tokenId;
         bool swap0To1;
