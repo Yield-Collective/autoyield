@@ -65,6 +65,9 @@ interface IAutoYield is IERC721Receiver {
     event TWAPConfigChanged(uint32 TWAPSeconds, uint16 maxTWAPTickDifference);
     event SwapRouterChanged(address swapRouterReBalancer);
 
+    /// @notice how reward should be converted
+    enum RewardConversion { NONE, TOKEN_0, TOKEN_1 }
+
     // defines when and how a position can be changed by operator
     // when a position is adjusted config for the position is cleared and copied to the newly created position
     struct RangePositionConfig {
@@ -175,6 +178,21 @@ interface IAutoYield is IERC721Receiver {
         int24 tickUpper;
     }
 
+    /// @notice params for autoCompound()
+    struct AutoCompoundParams {
+        // tokenid to autocompound
+        uint256 tokenId;
+
+        // which token to convert to
+        RewardConversion rewardConversion;
+
+        // should token be withdrawn to compounder immediately
+        bool withdrawReward;
+
+        // do swap - to add max amount to position (costs more gas)
+        bool doSwap;
+    }
+
     /// @notice The weth address
     function weth() external view returns (IWETH9);
 
@@ -255,24 +273,6 @@ interface IAutoYield is IERC721Receiver {
      * @param amount amount to withdraw
      */
     function withdrawBalance(address token, address to, uint256 amount) external;
-
-    /// @notice how reward should be converted
-    enum RewardConversion { NONE, TOKEN_0, TOKEN_1 }
-
-    /// @notice params for autoCompound()
-    struct AutoCompoundParams {
-        // tokenid to autocompound
-        uint256 tokenId;
-        
-        // which token to convert to
-        RewardConversion rewardConversion;
-
-        // should token be withdrawn to compounder immediately
-        bool withdrawReward;
-
-        // do swap - to add max amount to position (costs more gas)
-        bool doSwap;
-    }
 
     /**
      * @notice Autocompounds for a given NFT (anyone can call this and gets a percentage of the fees)
