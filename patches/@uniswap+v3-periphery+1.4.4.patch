@@ -1,0 +1,53 @@
+diff --git a/node_modules/@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol b/node_modules/@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol
+index 023b266..db97932 100644
+--- a/node_modules/@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol
++++ b/node_modules/@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol
+@@ -2,8 +2,8 @@
+ pragma solidity >=0.7.5;
+ pragma abicoder v2;
+ 
+-import '@openzeppelin/contracts/token/ERC721/IERC721Metadata.sol';
+-import '@openzeppelin/contracts/token/ERC721/IERC721Enumerable.sol';
++import '@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol';
++import '@openzeppelin/contracts/token/ERC721/extensions/IERC721Enumerable.sol';
+ 
+ import './IPoolInitializer.sol';
+ import './IERC721Permit.sol';
+diff --git a/node_modules/@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol b/node_modules/@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol
+index 58ab43e..ee5657f 100644
+--- a/node_modules/@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol
++++ b/node_modules/@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol
+@@ -1,5 +1,5 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+-pragma solidity =0.7.6;
++pragma solidity >=0.8.0;
+ 
+ import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
+ 
+diff --git a/node_modules/@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol b/node_modules/@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol
+index 60de385..eccebc0 100644
+--- a/node_modules/@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol
++++ b/node_modules/@uniswap/v3-periphery/contracts/libraries/PoolAddress.sol
+@@ -33,13 +33,15 @@ library PoolAddress {
+     function computeAddress(address factory, PoolKey memory key) internal pure returns (address pool) {
+         require(key.token0 < key.token1);
+         pool = address(
+-            uint256(
+-                keccak256(
+-                    abi.encodePacked(
+-                        hex'ff',
+-                        factory,
+-                        keccak256(abi.encode(key.token0, key.token1, key.fee)),
+-                        POOL_INIT_CODE_HASH
++            uint160(
++                uint256(
++                    keccak256(
++                        abi.encodePacked(
++                            hex'ff',
++                            factory,
++                            keccak256(abi.encode(key.token0, key.token1, key.fee)),
++                            POOL_INIT_CODE_HASH
++                        )
+                     )
+                 )
+             )

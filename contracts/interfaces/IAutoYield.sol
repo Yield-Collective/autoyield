@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.7.0;
+pragma solidity ^0.8.0;
 pragma abicoder v2;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -18,11 +18,6 @@ import "@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol";
                    /_/
 */  
 interface IAutoYield is IERC721Receiver {
-   
-    // config changes
-    event RewardUpdated(address account, uint64 totalRewardX64, uint64 compounderRewardX64);
-    event TWAPConfigUpdated(address account, uint16 maxTWAPTickDifference, uint32 TWAPSeconds);
-
     // token movements
     event TokenDeposited(address account, uint256 tokenId);
     event TokenWithdrawn(address account, address to, uint256 tokenId);
@@ -60,10 +55,21 @@ interface IAutoYield is IERC721Receiver {
         uint64 maxRewardX64
     );
     // admin events
-    event OperatorChanged(address newOperator, bool active);
-    event WithdrawerChanged(address newWithdrawer);
+
     event TWAPConfigChanged(uint32 TWAPSeconds, uint16 maxTWAPTickDifference);
-    event SwapRouterChanged(address swapRouterReBalancer);
+
+    error SameRange();
+    error NotReady();
+    error Unauthorized();
+    error TWAPCheckFailed();
+    error SwapFailed();
+    error SlippageError();
+    error EtherSendFailed();
+    error NotWETH();
+    error NotConfigured();
+    error ExceedsMaxReward();
+    error LiquidityChanged();
+    error SwapAmountTooLarge();
 
     /// @notice how reward should be converted
     enum RewardConversion { NONE, TOKEN_0, TOKEN_1 }
@@ -204,25 +210,6 @@ interface IAutoYield is IERC721Receiver {
 
     /// @notice The nonfungible position manager address with which this staking contract is compatible
     function swapRouter() external view returns (ISwapRouter);
-
-    /// @notice Total reward which is payed for autocompounding
-    function totalRewardX64() external view returns (uint64);
-
-    /// @notice Reward which is payed to compounder - less or equal to totalRewardX64
-    function compounderRewardX64() external view returns (uint64);
-
-    /// @notice Max tick difference between TWAP tick and current price to allow operations
-    function maxTWAPTickDifference() external view returns (uint16);
-
-    /// @notice Number of seconds to use for TWAP calculation
-    function TWAPSeconds() external view returns (uint32);
-
-    /**
-     * @notice Management method to lower reward or change ratio between total and compounder reward (onlyOwner)
-     * @param _totalRewardX64 new total reward (can't be higher than current total reward)
-     * @param _compounderRewardX64 new compounder reward
-     */
-    function setReward(uint64 _totalRewardX64, uint64 _compounderRewardX64) external;
 
     /// @notice Owner of a managed NFT
     function ownerOf(uint256 tokenId) external view returns (address owner);

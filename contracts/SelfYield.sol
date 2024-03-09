@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.7.0;
+pragma solidity ^0.8.0;
 pragma abicoder v2;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
@@ -23,7 +23,6 @@ import "@uniswap/swap-router-contracts/contracts/interfaces/IV3SwapRouter.sol";
  * Leftover tokens are always returned to owner
  */
 contract SelfYield is Ownable, ReentrancyGuard {
-
     using SafeMath for uint256;
 
     uint128 constant Q64 = 2**64;
@@ -55,7 +54,6 @@ contract SelfYield is Ownable, ReentrancyGuard {
     );
 
     constructor(INonfungiblePositionManager _nonfungiblePositionManager, IV3SwapRouter _swapRouter) {
-
         require(address(_nonfungiblePositionManager) != address(0) && address(_swapRouter) != address(0));
 
         weth = _nonfungiblePositionManager.WETH9();
@@ -161,8 +159,8 @@ contract SelfYield is Ownable, ReentrancyGuard {
                 (state.amount0, state.amount1) = _swapToPriceRatio(swapParams);
             }
 
-            state.maxAddAmount0 = state.amount0.mul(Q64).div(uint(totalRewardX64).add(Q64));	
-            state.maxAddAmount1 = state.amount1.mul(Q64).div(uint(totalRewardX64).add(Q64));
+            state.maxAddAmount0 = state.amount0.mul(Q64).div(uint(totalRewardX64) + Q64);
+            state.maxAddAmount1 = state.amount1.mul(Q64).div(uint(totalRewardX64) + Q64);
 
             // deposit liquidity into tokenId
             if (state.maxAddAmount0 > 0 || state.maxAddAmount1 > 0) {
@@ -217,14 +215,14 @@ contract SelfYield is Ownable, ReentrancyGuard {
         secondsAgos[1] = twapPeriod; // from (before)
         // pool observe may fail when there is not enough history available
         try pool.observe(secondsAgos) returns (int56[] memory tickCumulatives, uint160[] memory) {
-            return (int24((tickCumulatives[0] - tickCumulatives[1]) / twapPeriod), true);
+            return (int24(int256(tickCumulatives[0] - tickCumulatives[1]) / int256(int32(twapPeriod))), true);
         } catch {
             return (0, false);
         } 
     }
    
     function _requireMaxTickDifference(int24 tick, int24 other, uint32 maxDifference) internal pure {	
-        require(other > tick && (uint48(other - tick) < maxDifference) || other <= tick && (uint48(tick - other) < maxDifference), "price err");	
+        require(other > tick && (uint48(uint24(other - tick)) < maxDifference) || other <= tick && (uint48(uint24(tick - other)) < maxDifference), "price err");
     }
 
     // state used during swap execution
