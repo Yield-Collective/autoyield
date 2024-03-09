@@ -1,5 +1,5 @@
 {
-  "name": "compoundor",
+  "name": "auto-yield",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.4",

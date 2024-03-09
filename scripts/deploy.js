@@ -1,9 +1,11 @@
-const deployCompoundor = require('./deploy-compoundor')
-const deployMultiCompoundor = require('./deploy-multi-compoundor')
+const deployYield = require('./deploy-autoyield')
+const deployMultiYield = require('./deploy-multiyield')
+const deploySelfYield = require('./deploy-selfyield')
 
 const main = async () => {
-  const compoundorAddress = await deployCompoundor()
-  await deployMultiCompoundor(compoundorAddress);
+  const compoundorAddress = await deployYield()
+  await deployMultiYield(compoundorAddress);
+  //await deploySelfYield(compoundorAddress);
 }
 
 main()
