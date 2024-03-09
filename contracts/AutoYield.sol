@@ -28,11 +28,6 @@ import "./interfaces/IAutoYield.sol";
 contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     using SafeMath for uint256;
 
-    // preconfigured options for swap routers
-    address public immutable swapRouterOption0;
-    address public immutable swapRouterOption1;
-    address public immutable swapRouterOption2;
-
     uint128 constant Q64 = 2**64;
     uint128 constant Q96 = 2**96;
 
@@ -51,7 +46,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     uint16 public override maxTWAPTickDifference = 100; // 1%
     uint32 public override TWAPSeconds = 60;
 
-    uint8 public swapRouterIndex; // default is 0
+    address public swapRouterReBalance;
 
     // uniswap v3 components
     address public withdrawer;
@@ -68,18 +63,16 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     mapping(address => uint256[]) public override accountTokens;
     mapping(address => mapping(address => uint256)) public override accountBalances;
 
-    constructor(INonfungiblePositionManager _nonfungiblePositionManager, ISwapRouter _swapRouter, address _operator, address _withdrawer, uint32 _TWAPSeconds, uint16 _maxTWAPTickDifference, address[] memory _swapRouterOptions)
+    constructor(INonfungiblePositionManager _nonfungiblePositionManager, ISwapRouter _swapRouter, address _operator, address _withdrawer, uint32 _TWAPSeconds, uint16 _maxTWAPTickDifference)
     {
         npm = _nonfungiblePositionManager;
         swapRouter = _swapRouter;
         factory = IUniswapV3Factory(npm.factory());
         weth = IWETH9(npm.WETH9());
 
-        swapRouterOption0 = _swapRouterOptions[0];
-        swapRouterOption1 = _swapRouterOptions[1];
-        swapRouterOption2 = _swapRouterOptions[2];
+        swapRouterReBalance = address(_swapRouter);
 
-        emit SwapRouterChanged(0);
+        emit SwapRouterChanged(swapRouterReBalance);
 
         setOperator(_operator, true);
         setWithdrawer(_withdrawer);
@@ -101,17 +94,11 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
 
     /**
     * @notice Owner controlled function to change swap router (onlyOwner)
-     * @param _swapRouterIndex new swap router index
+     * @param _swapRouterReBalance new swap router address
      */
-    function setSwapRouter(uint8 _swapRouterIndex) external onlyOwner {
-
-        // only allow preconfigured routers
-        if (_swapRouterIndex > 2) {
-            revert('InvalidConfig');
-        }
-
-        emit SwapRouterChanged(_swapRouterIndex);
-        swapRouterIndex = _swapRouterIndex;
+    function setSwapRouterReBalance(address _swapRouterReBalance) external onlyOwner {
+        emit SwapRouterChanged(_swapRouterReBalance);
+        swapRouterReBalance = _swapRouterReBalance;
     }
 
     /**
@@ -714,38 +701,6 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         other <= tick && (uint48(tick - other) < maxDifference),
         "price err");
     }
-    // state used during swap execution
-    struct SwapState {
-        uint256 rewardAmount0;
-        uint256 rewardAmount1;
-        uint256 positionAmount0;
-        uint256 positionAmount1;
-        int24 tick;
-        int24 otherTick;
-        uint160 sqrtPriceX96;
-        uint160 sqrtPriceX96Lower;
-        uint160 sqrtPriceX96Upper;
-        uint256 amountRatioX96;
-        uint256 delta0;
-        uint256 delta1;
-        bool sell0;
-        bool twapOk;
-        uint256 totalReward0;
-    }
-
-    struct SwapParams {
-        address token0;
-        address token1;
-        uint24 fee; 
-        int24 tickLower; 
-        int24 tickUpper; 
-        uint256 amount0;
-        uint256 amount1;
-        uint256 deadline;
-        RewardConversion bc;
-        bool isOwner;
-        bool doSwap;
-    }
 
     // checks oracle for fair price - swaps to position ratio (considering estimated reward) - calculates max amount to be added
     function _swapToPriceRatio(SwapParams memory params) 
@@ -932,8 +887,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
             SafeERC20.safeApprove(tokenIn, allowanceTarget, amountIn);
 
             // execute swap with configured router
-            address _swapRouter = swapRouterIndex == 0 ? swapRouterOption0 : (swapRouterIndex == 1 ? swapRouterOption1 : swapRouterOption2);
-            (bool success,) = _swapRouter.call(data);
+            (bool success,) = swapRouterReBalance.call(data);
             if (!success) {
                 revert('SwapFailed');
             }

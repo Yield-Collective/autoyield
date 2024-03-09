@@ -63,7 +63,7 @@ interface IAutoYield is IERC721Receiver {
     event OperatorChanged(address newOperator, bool active);
     event WithdrawerChanged(address newWithdrawer);
     event TWAPConfigChanged(uint32 TWAPSeconds, uint16 maxTWAPTickDifference);
-    event SwapRouterChanged(uint8 swapRouterIndex);
+    event SwapRouterChanged(address swapRouterReBalancer);
 
     // defines when and how a position can be changed by operator
     // when a position is adjusted config for the position is cleared and copied to the newly created position
@@ -123,6 +123,39 @@ interface IAutoYield is IERC721Receiver {
         uint256 amountOutDelta;
 
         uint256 newTokenId;
+    }
+
+    // state used during swap execution
+    struct SwapState {
+        uint256 rewardAmount0;
+        uint256 rewardAmount1;
+        uint256 positionAmount0;
+        uint256 positionAmount1;
+        int24 tick;
+        int24 otherTick;
+        uint160 sqrtPriceX96;
+        uint160 sqrtPriceX96Lower;
+        uint160 sqrtPriceX96Upper;
+        uint256 amountRatioX96;
+        uint256 delta0;
+        uint256 delta1;
+        bool sell0;
+        bool twapOk;
+        uint256 totalReward0;
+    }
+
+    struct SwapParams {
+        address token0;
+        address token1;
+        uint24 fee;
+        int24 tickLower;
+        int24 tickUpper;
+        uint256 amount0;
+        uint256 amount1;
+        uint256 deadline;
+        RewardConversion bc;
+        bool isOwner;
+        bool doSwap;
     }
 
     /// @notice The weth address
