@@ -2,8 +2,8 @@
 pragma solidity ^0.8.0;
 pragma abicoder v2;
 
-import {IAutoYield} from "./interfaces/IAutoYield.sol";
-import {IMultiYield} from "./interfaces/IMultiYield.sol";
+import "./interfaces/IAutoYield.sol";
+import "./interfaces/IMultiYield.sol";
 
 contract MultiYield is IMultiYield {
     IAutoYield public compoundor;

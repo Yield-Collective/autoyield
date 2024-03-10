@@ -26,6 +26,7 @@ interface IAutoYield is IERC721Receiver {
     event BalanceAdded(address account, address token, uint256 amount);
     event BalanceRemoved(address account, address token, uint256 amount);
     event BalanceWithdrawn(address account, address token, address to, uint256 amount);
+    event RewardUpdated(address account, uint64 totalRewardX64, uint64 compounderRewardX64);
 
     // autocompound event
     event AutoCompounded(
@@ -54,9 +55,6 @@ interface IAutoYield is IERC721Receiver {
         bool onlyFees,
         uint64 maxRewardX64
     );
-    // admin events
-
-    event TWAPConfigChanged(uint32 TWAPSeconds, uint16 maxTWAPTickDifference);
 
     error SameRange();
     error NotReady();
@@ -70,6 +68,7 @@ interface IAutoYield is IERC721Receiver {
     error ExceedsMaxReward();
     error LiquidityChanged();
     error SwapAmountTooLarge();
+    error InvalidConfig();
 
     /// @notice how reward should be converted
     enum RewardConversion { NONE, TOKEN_0, TOKEN_1 }

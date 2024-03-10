@@ -49,4 +49,12 @@ library YieldMath {
             return spacing;
         }
     }
+
+    function calculatePriceX96(uint160 sqrtPriceX96) internal pure returns (uint256) {
+        return uint256(sqrtPriceX96) * uint256(sqrtPriceX96) / (1 << 192);
+    }
+
+    function calculateTotalReward(uint256 amount0, uint256 amount1, uint256 priceX96, uint256 totalRewardX64) internal pure returns (uint256) {
+        return amount0 + (amount1 * (1 << 96) / priceX96) * totalRewardX64 / (1 << 64);
+    }
 }
