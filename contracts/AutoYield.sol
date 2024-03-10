@@ -19,23 +19,14 @@ import "./lib/YieldSwap.sol";
 
 contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     using SafeMath for uint256;
-
-    uint32 constant public MAX_POS_PER_ADDRESS = 100;
-    uint128 constant Q64 = 2**64;
-    uint128 constant Q96 = 2**96;
-    uint64 constant public MAX_REWARD_X64 = uint64(Q64 / 50);
-    uint64 public constant totalRewardX64 = MAX_REWARD_X64;
-    uint64 public constant compounderRewardX64 = MAX_REWARD_X64 / 2;
-    uint16 constant public maxTWAPTickDifference = 100;
-    uint32 constant public TWAPSeconds = 60;
     address public operator;
 
-    IUniswapV3Factory public override factory;
     INonfungiblePositionManager public override npm;
     ISwapRouter public override swapRouter;
-    IWETH9 public immutable override weth;
+    address public immutable override weth;
+    address public immutable override factory;
 
-    mapping (uint256 => RangePositionConfig) public rangePositionConfigs;
+    mapping(uint256 => RangePositionConfig) public rangePositionConfigs;
     mapping(uint256 => address) public override ownerOf;
     mapping(address => uint256[]) public override accountTokens;
     mapping(address => mapping(address => uint256)) public override accountBalances;
@@ -44,8 +35,8 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     {
         npm = _nonfungiblePositionManager;
         swapRouter = _swapRouter;
-        factory = IUniswapV3Factory(npm.factory());
-        weth = IWETH9(npm.WETH9());
+        factory = npm.factory();
+        weth = npm.WETH9();
 
         operator = msg.sender;
     }
@@ -104,8 +95,8 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         (state.amount0, state.amount1, state.feeAmount0, state.feeAmount1) = YieldSwap.decreaseFullLiquidityAndCollect(npm, params.tokenId, state.liquidity, params.amountRemoveMin0, params.amountRemoveMin1, params.deadline);
 
         if (config.onlyFees) {
-            state.protocolReward0 = state.feeAmount0 * params.rewardX64 / Q64;
-            state.protocolReward1 = state.feeAmount1 * params.rewardX64 / Q64;
+            state.protocolReward0 = state.feeAmount0 * params.rewardX64 / YieldSwap.Q64;
+            state.protocolReward1 = state.feeAmount1 * params.rewardX64 / YieldSwap.Q64;
             state.amount0 -= state.protocolReward0;
             state.amount1 -= state.protocolReward1;
         }
@@ -114,8 +105,8 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
             revert SwapAmountTooLarge();
         }
 
-        state.pool = YieldSwap.getPool(address(factory), state.token0, state.token1, state.fee);
-        (state.amountOutMin,state.currentTick,,) = YieldSwap.validateSwap(params.swap0To1, params.amountIn, state.pool, TWAPSeconds, maxTWAPTickDifference, params.swap0To1 ? config.token0SlippageX64 : config.token1SlippageX64);
+        state.pool = YieldSwap.getPool(factory, state.token0, state.token1, state.fee);
+        (state.amountOutMin,state.currentTick,,) = YieldSwap.validateSwap(params.swap0To1, params.amountIn, state.pool, params.swap0To1 ? config.token0SlippageX64 : config.token1SlippageX64);
 
         if (state.currentTick < state.tickLower - config.lowerTickLimit || state.currentTick >= state.tickUpper + config.upperTickLimit) {
             int24 tickSpacing = YieldMath.getTickSpacing(factory, state.fee);
@@ -129,8 +120,8 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
 
             state.amount0 = params.swap0To1 ? state.amount0 - state.amountInDelta : state.amount0 + state.amountOutDelta;
             state.amount1 = params.swap0To1 ? state.amount1 + state.amountOutDelta : state.amount1 - state.amountInDelta;
-            state.maxAddAmount0 = config.onlyFees ? state.amount0 : state.amount0 * Q64 / (params.rewardX64 + Q64);
-            state.maxAddAmount1 = config.onlyFees ? state.amount1 : state.amount1 * Q64 / (params.rewardX64 + Q64);
+            state.maxAddAmount0 = config.onlyFees ? state.amount0 : state.amount0 * YieldSwap.Q64 / (params.rewardX64 + YieldSwap.Q64);
+            state.maxAddAmount1 = config.onlyFees ? state.amount1 : state.amount1 * YieldSwap.Q64 / (params.rewardX64 + YieldSwap.Q64);
 
             INonfungiblePositionManager.MintParams memory mintParams =
                                 INonfungiblePositionManager.MintParams(
@@ -160,8 +151,8 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
             npm.safeTransferFrom(address(this), state.owner, state.newTokenId);
 
             if (!config.onlyFees) {
-                state.protocolReward0 = state.amountAdded0 * params.rewardX64 / Q64;
-                state.protocolReward1 = state.amountAdded1 * params.rewardX64 / Q64;
+                state.protocolReward0 = state.amountAdded0 * params.rewardX64 / YieldSwap.Q64;
+                state.protocolReward1 = state.amountAdded1 * params.rewardX64 / YieldSwap.Q64;
                 state.amount0 -= state.protocolReward0;
                 state.amount1 -= state.protocolReward1;
             }
@@ -271,7 +262,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
             );
 
             (state.amount0, state.amount1, state.priceX96, state.maxAddAmount0, state.maxAddAmount1) = 
-                YieldSwap.swapToPriceRatio(factory, swapRouter, swapParams, TWAPSeconds, maxTWAPTickDifference);
+                YieldSwap.swapToPriceRatio(factory, swapRouter, swapParams);
 
             if (state.maxAddAmount0 > 0 || state.maxAddAmount1 > 0) {
                 (, compounded0, compounded1) = npm.increaseLiquidity(
@@ -303,9 +294,9 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
             _setBalance(state.tokenOwner, state.token1, state.amount1.sub(compounded1).sub(amount1Fees));
 
             if (isNotOwner) {
-                uint64 protocolRewardX64 = totalRewardX64 - compounderRewardX64;
-                uint256 protocolFees0 = amount0Fees.mul(protocolRewardX64).div(totalRewardX64);
-                uint256 protocolFees1 = amount1Fees.mul(protocolRewardX64).div(totalRewardX64);
+                uint64 protocolRewardX64 = YieldSwap.totalRewardX64 - YieldSwap.compounderRewardX64;
+                uint256 protocolFees0 = amount0Fees.mul(protocolRewardX64).div(YieldSwap.totalRewardX64);
+                uint256 protocolFees1 = amount1Fees.mul(protocolRewardX64).div(YieldSwap.totalRewardX64);
 
                 reward0 = amount0Fees.sub(protocolFees0);
                 reward1 = amount1Fees.sub(protocolFees1);
@@ -388,7 +379,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     }
 
     function _addToken(uint256 tokenId, address account) internal {
-        require(accountTokens[account].length < MAX_POS_PER_ADDRESS);
+        require(accountTokens[account].length < 100);
 
         (, , address token0, address token1, , , , , , , , ) = npm.positions(tokenId);
 
@@ -428,8 +419,8 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     function _transferToken(address to, address token, uint256 amount, bool unwrap) internal {
         accountBalances[msg.sender][token] = accountBalances[msg.sender][token].sub(amount);
         emit BalanceRemoved(msg.sender, token, amount);
-        if (address(weth) == token && unwrap) {
-            weth.withdraw(amount);
+        if (weth == token && unwrap) {
+            IWETH9(weth).withdraw(amount);
             (bool sent, ) = to.call{value: amount}("");
             if (!sent) {
                 revert EtherSendFailed();

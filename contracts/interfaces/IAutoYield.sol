@@ -198,10 +198,10 @@ interface IAutoYield is IERC721Receiver {
     }
 
     /// @notice The weth address
-    function weth() external view returns (IWETH9);
+    function weth() external view returns (address);
 
     /// @notice The factory address with which this staking contract is compatible
-    function factory() external view returns (IUniswapV3Factory);
+    function factory() external view returns (address);
 
     /// @notice The nonfungible position manager address with which this staking contract is compatible
     function npm() external view returns (INonfungiblePositionManager);

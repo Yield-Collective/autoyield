@@ -17,10 +17,13 @@ import "./YieldMath.sol";
 
 library YieldSwap {
     using SafeMath for uint256;
-    uint128 constant internal Q96 = 2**96;
-    uint128 constant internal Q64 = 2**64;
-    uint64 constant internal MAX_REWARD_X64 = uint64(Q64 / 50);
-    uint64 constant internal totalRewardX64 = MAX_REWARD_X64;
+    uint128 constant public Q96 = 2**96;
+    uint128 constant public Q64 = 2**64;
+    uint64 constant public MAX_REWARD_X64 = uint64(Q64 / 50);
+    uint64 constant public totalRewardX64 = MAX_REWARD_X64;
+    uint64 constant public compounderRewardX64 = MAX_REWARD_X64 / 2;
+    uint16 constant public maxTWAPTickDifference = 100;
+    uint32 constant public TWAPSeconds = 60;
 
     function calculatePriceX96(uint160 sqrtPriceX96) internal pure returns (uint256) {
         return uint256(sqrtPriceX96) * uint256(sqrtPriceX96) / (1 << 192);
@@ -99,10 +102,10 @@ library YieldSwap {
         return state;
     }
 
-    function validateSwap(bool swap0For1, uint256 amountIn, IUniswapV3Pool pool, uint32 twapPeriod, uint16 maxTickDifference, uint64 maxPriceDifferenceX64) internal view returns (uint256 amountOutMin, int24 currentTick, uint160 sqrtPriceX96, uint256 priceX96) {
+    function validateSwap(bool swap0For1, uint256 amountIn, IUniswapV3Pool pool, uint64 maxPriceDifferenceX64) internal view returns (uint256 amountOutMin, int24 currentTick, uint160 sqrtPriceX96, uint256 priceX96) {
         (sqrtPriceX96,currentTick,,,,,) = pool.slot0();
 
-        if (!YieldMath.hasMaxTWAPTickDifference(pool, twapPeriod, currentTick, maxTickDifference)) {
+        if (!YieldMath.hasMaxTWAPTickDifference(pool, TWAPSeconds, currentTick, maxTWAPTickDifference)) {
             revert IAutoYield.TWAPCheckFailed();
         }
 
@@ -177,7 +180,7 @@ library YieldSwap {
     }
 
 
-    function swapToPriceRatio(IUniswapV3Factory factory, ISwapRouter swapRouter, IAutoYield.SwapParams memory params_, uint32 TWAPSeconds, uint16 maxTWAPTickDifference)
+    function swapToPriceRatio(address factory, ISwapRouter swapRouter, IAutoYield.SwapParams memory params_)
     internal
     returns (uint256 amount0, uint256 amount1, uint256 priceX96, uint256 maxAddAmount0, uint256 maxAddAmount1)
     {
@@ -187,7 +190,7 @@ library YieldSwap {
         amount0 = params.amount0;
         amount1 = params.amount1;
 
-        IUniswapV3Pool pool = IUniswapV3Pool(factory.getPool(params.token0, params.token1, params.fee));
+        IUniswapV3Pool pool = IUniswapV3Pool(IUniswapV3Factory(factory).getPool(params.token0, params.token1, params.fee));
 
         (state.sqrtPriceX96,state.tick,,,,,) = pool.slot0();
 
