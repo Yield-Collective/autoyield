@@ -11,11 +11,10 @@ export default async function main() {
 
   console.log("Deploying on", hre.network.name)
 
-  const constructorArguments = [nonfungiblePositionManagerAddress, swapRouterAddressV2]
   const contractFactory = await hre.ethers.getContractFactory("SelfYield", signer);
-  const deployTx = await contractFactory.getDeployTransaction(...constructorArguments, { gasPrice })
+  const deployTx = await contractFactory.getDeployTransaction(nonfungiblePositionManagerAddress, swapRouterAddressV2, { gasPrice })
   const gasLimit = await hre.ethers.provider.estimateGas(deployTx)
-  const contract = await contractFactory.deploy(...constructorArguments, {
+  const contract = await contractFactory.deploy(nonfungiblePositionManagerAddress, swapRouterAddressV2, {
     gasPrice,
     gasLimit: gasLimit * 12n / 10n
   });
@@ -29,7 +28,7 @@ export default async function main() {
   await hre.ethers.provider.waitForTransaction(contract.deploymentTransaction()?.hash as string, 6)
   await hre.run("verify:verify", {
     address: deployedAddress,
-    constructorArguments: constructorArguments,
+    constructorArguments: [nonfungiblePositionManagerAddress, swapRouterAddressV2],
   });
 
   console.log("Verified at", deployedAddress)
