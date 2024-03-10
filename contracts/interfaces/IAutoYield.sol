@@ -4,10 +4,11 @@ pragma abicoder v2;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
+
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol";
 
 /*                                                  __          
@@ -198,10 +199,10 @@ interface IAutoYield is IERC721Receiver {
     }
 
     /// @notice The weth address
-    function weth() external view returns (address);
+    function weth() external view returns (IWETH9);
 
     /// @notice The factory address with which this staking contract is compatible
-    function factory() external view returns (address);
+    function factory() external view returns (IUniswapV3Factory);
 
     /// @notice The nonfungible position manager address with which this staking contract is compatible
     function npm() external view returns (INonfungiblePositionManager);

@@ -6,30 +6,23 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
 
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-
-import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol";
-
 import "./interfaces/IAutoYield.sol";
 import "./lib/YieldMath.sol";
 import "./lib/YieldSwap.sol";
 
 contract AutoYield is IAutoYield, ReentrancyGuard, Context {
     using SafeMath for uint256;
-    address public operator;
 
     INonfungiblePositionManager public override npm;
     ISwapRouter public override swapRouter;
-    address public immutable override weth;
-    address public immutable override factory;
+    IUniswapV3Factory public override factory;
+    IWETH9 public override weth;
+    address public operator;
 
     mapping(uint256 => RangePositionConfig) public rangePositionConfigs;
     mapping(uint256 => address) public override ownerOf;
     mapping(address => uint256[]) public override accountTokens;
-    mapping(address => mapping(address => uint256))
-        public
-        override accountBalances;
+    mapping(address => mapping(address => uint256)) public override accountBalances;
 
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
@@ -37,24 +30,25 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
     ) {
         npm = _nonfungiblePositionManager;
         swapRouter = _swapRouter;
-        factory = npm.factory();
-        weth = npm.WETH9();
+        factory = IUniswapV3Factory(npm.factory());
+        weth = IWETH9(npm.WETH9());
 
         operator = msg.sender;
     }
 
     function multicall(bytes[] calldata data) external returns (bytes[] memory results) {
-    bool useSenderAsContext = msg.sender == _msgSender();
-    results = new bytes[](data.length);
+        bool useSenderAsContext = msg.sender == _msgSender();
+        results = new bytes[](data.length);
 
-    for (uint256 i = 0; i < data.length; ++i) {
-        bytes memory callData = useSenderAsContext ? data[i] : bytes.concat(data[i], abi.encode(msg.sender));
-        (bool success, bytes memory result) = address(this).delegatecall(callData);
-        require(success);
-        results[i] = result;
+        for (uint256 i = 0; i < data.length; ++i) {
+            bytes memory callData = useSenderAsContext ? data[i] : bytes.concat(data[i], abi.encode(msg.sender));
+            (bool success, bytes memory result) = address(this).delegatecall(callData);
+            require(success);
+            results[i] = result;
+        }
+
+        return results;
     }
-    return results;
-}
 
     function withdrawBalances(
         address[] calldata tokens,
@@ -69,7 +63,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         for (; i < count; ++i) {
             uint256 balance = IERC20(tokens[i]).balanceOf(address(this));
             if (balance > 0) {
-                _tT(to, tokens[i], balance, true);
+                _transferToken(to, tokens[i], balance, true);
             }
         }
     }
@@ -88,7 +82,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         }
     }
 
-    function reB(RangeExecuteParams calldata params) external {
+    function reBalance(RangeExecuteParams calldata params) external {
         if (msg.sender != operator) {
             revert Unauthorized();
         }
@@ -161,7 +155,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         }
 
         state.pool = YieldSwap.getPool(
-            factory,
+            address(factory),
             state.token0,
             state.token1,
             state.fee
@@ -263,7 +257,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
             }
 
             if (state.amount0 - state.amountAdded0 > 0) {
-                _tT(
+                _transferToken(
                     state.owner,
                     state.token0,
                     state.amount0 - state.amountAdded0,
@@ -271,7 +265,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
                 );
             }
             if (state.amount1 - state.amountAdded1 > 0) {
-                _tT(
+                _transferToken(
                     state.owner,
                     state.token1,
                     state.amount1 - state.amountAdded1,
@@ -310,10 +304,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         }
     }
 
-    function cT (
-        uint256 tokenId,
-        RangePositionConfig calldata config
-    ) external {
+    function configToken(uint256 tokenId, RangePositionConfig calldata config) external {
         address owner = npm.ownerOf(tokenId);
         if (owner != msg.sender) {
             revert Unauthorized();
@@ -346,7 +337,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
     ) external override nonReentrant returns (bytes4) {
         require(msg.sender == address(npm));
 
-        _aT(tokenId, from);
+        _addToken(tokenId, from);
         emit TokenDeposited(from, tokenId);
         return this.onERC721Received.selector;
     }
@@ -453,12 +444,12 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
                 isNotOwner
             );
 
-            _sB(
+            _setBalance(
                 state.tokenOwner,
                 state.token0,
                 state.amount0.sub(compounded0).sub(amount0Fees)
             );
-            _sB(
+            _setBalance(
                 state.tokenOwner,
                 state.token1,
                 state.amount1.sub(compounded1).sub(amount1Fees)
@@ -477,15 +468,15 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
                 reward0 = amount0Fees.sub(protocolFees0);
                 reward1 = amount1Fees.sub(protocolFees1);
 
-                _iB(msg.sender, state.token0, reward0);
-                _iB(msg.sender, state.token1, reward1);
-                _iB(operator, state.token0, protocolFees0);
-                _iB(operator, state.token1, protocolFees1);
+                _increaseBalance(msg.sender, state.token0, reward0);
+                _increaseBalance(msg.sender, state.token1, reward1);
+                _increaseBalance(operator, state.token0, protocolFees0);
+                _increaseBalance(operator, state.token1, protocolFees1);
             }
         }
 
         if (params.withdrawReward) {
-            _wFB(state.token0, state.token1, msg.sender);
+            _withdrawFullBalances(state.token0, state.token1, msg.sender);
         }
 
         emit AutoCompounded(
@@ -521,14 +512,14 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         require(to != address(this));
         require(ownerOf[tokenId] == msg.sender);
 
-        _rT(msg.sender, tokenId);
+        _removeToken(msg.sender, tokenId);
         npm.safeTransferFrom(address(this), to, tokenId, data);
         emit TokenWithdrawn(msg.sender, to, tokenId);
 
         if (withdrawBalances_) {
             (, , address token0, address token1, , , , , , , , ) = npm
                 .positions(tokenId);
-            _wFB(token0, token1, to);
+            _withdrawFullBalances(token0, token1, to);
         }
     }
 
@@ -538,25 +529,17 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         uint256 amount
     ) external override nonReentrant {
         require(amount > 0);
-        _tT(to, token, amount, false);
+        _transferToken(to, token, amount, false);
     }
 
-    function _iB(
-        address account,
-        address token,
-        uint256 amount
-    ) internal {
+    function _increaseBalance(address account, address token, uint256 amount) internal {
         accountBalances[account][token] = accountBalances[account][token].add(
             amount
         );
         emit BalanceAdded(account, token, amount);
     }
 
-    function _sB(
-        address account,
-        address token,
-        uint256 amount
-    ) internal {
+    function _setBalance(address account, address token, uint256 amount) internal {
         uint currentBalance = accountBalances[account][token];
 
         accountBalances[account][token] = amount;
@@ -576,7 +559,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         }
     }
 
-    function _wFB(
+    function _withdrawFullBalances(
         address token0,
         address token1,
         address to
@@ -585,14 +568,14 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         uint256 balance1 = accountBalances[msg.sender][token1];
 
         if (balance0 > 0) {
-            _tT(to, token0, balance0, false);
+            _transferToken(to, token0, balance0, false);
         }
         if (balance1 > 0) {
-            _tT(to, token1, balance1, false);
+            _transferToken(to, token1, balance1, false);
         }
     }
 
-    function _aT(uint256 tokenId, address account) internal {
+    function _addToken(uint256 tokenId, address account) internal {
         require(accountTokens[account].length < 100);
 
         (, , address token0, address token1, , , , , , , , ) = npm.positions(
@@ -611,7 +594,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         ownerOf[tokenId] = account;
     }
 
-    function _rT(address account, uint256 tokenId) internal {
+    function _removeToken(address account, uint256 tokenId) internal {
         uint256[] memory accountTokensArr = accountTokens[account];
         uint256 len = accountTokensArr.length;
         uint256 assetIndex = len;
@@ -632,7 +615,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         delete ownerOf[tokenId];
     }
 
-    function _tT(
+    function _transferToken(
         address to,
         address token,
         uint256 amount,
@@ -641,8 +624,8 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         accountBalances[msg.sender][token] = accountBalances[msg.sender][token]
             .sub(amount);
         emit BalanceRemoved(msg.sender, token, amount);
-        if (weth == token && unwrap) {
-            IWETH9(weth).withdraw(amount);
+        if (address(weth) == token && unwrap) {
+            weth.withdraw(amount);
             (bool sent, ) = to.call{value: amount}("");
             if (!sent) {
                 revert EtherSendFailed();

@@ -8,6 +8,7 @@ import "@uniswap/v3-core/contracts/libraries/FullMath.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import "@uniswap/v3-core/contracts/libraries/TickMath.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 
 import "@uniswap/v3-periphery/contracts/libraries/LiquidityAmounts.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
@@ -180,7 +181,7 @@ library YieldSwap {
     }
 
 
-    function swapToPriceRatio(address factory, ISwapRouter swapRouter, IAutoYield.SwapParams memory params_)
+    function swapToPriceRatio(IUniswapV3Factory factory, ISwapRouter swapRouter, IAutoYield.SwapParams memory params_)
     internal
     returns (uint256 amount0, uint256 amount1, uint256 priceX96, uint256 maxAddAmount0, uint256 maxAddAmount1)
     {
@@ -190,7 +191,7 @@ library YieldSwap {
         amount0 = params.amount0;
         amount1 = params.amount1;
 
-        IUniswapV3Pool pool = IUniswapV3Pool(IUniswapV3Factory(factory).getPool(params.token0, params.token1, params.fee));
+        IUniswapV3Pool pool = IUniswapV3Pool(factory.getPool(params.token0, params.token1, params.fee));
 
         (state.sqrtPriceX96,state.tick,,,,,) = pool.slot0();
 

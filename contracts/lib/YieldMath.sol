@@ -34,7 +34,7 @@ library YieldMath {
         }
     }
 
-    function getTickSpacing(address factory, uint24 fee) internal view returns (int24) {
+    function getTickSpacing(IUniswapV3Factory factory, uint24 fee) internal view returns (int24) {
         if (fee == 10000) {
             return 200;
         } else if (fee == 3000) {
@@ -42,7 +42,7 @@ library YieldMath {
         } else if (fee == 500) {
             return 10;
         } else {
-            int24 spacing = IUniswapV3Factory(factory).feeAmountTickSpacing(fee);
+            int24 spacing = factory.feeAmountTickSpacing(fee);
             if (spacing <= 0) {
                 revert NotSupportedFeeTier();
             }
