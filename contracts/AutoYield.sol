@@ -4,13 +4,13 @@ pragma abicoder v2;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/Context.sol";
+import "@openzeppelin/contracts/utils/Multicall.sol";
 
 import "./interfaces/IAutoYield.sol";
 import "./lib/YieldMath.sol";
 import "./lib/YieldSwap.sol";
 
-contract AutoYield is IAutoYield, ReentrancyGuard, Context {
+contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
     using SafeMath for uint256;
 
     INonfungiblePositionManager public override npm;
@@ -34,20 +34,6 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Context {
         weth = IWETH9(npm.WETH9());
 
         operator = msg.sender;
-    }
-
-    function multicall(bytes[] calldata data) external returns (bytes[] memory results) {
-        bool useSenderAsContext = msg.sender == _msgSender();
-        results = new bytes[](data.length);
-
-        for (uint256 i = 0; i < data.length; ++i) {
-            bytes memory callData = useSenderAsContext ? data[i] : bytes.concat(data[i], abi.encode(msg.sender));
-            (bool success, bytes memory result) = address(this).delegatecall(callData);
-            require(success);
-            results[i] = result;
-        }
-
-        return results;
     }
 
     function withdrawBalances(
