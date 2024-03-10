@@ -1,6 +1,7 @@
 import {task} from "hardhat/config";
 
 require('dotenv').config()
+require("hardhat-contract-sizer");
 
 import "@nomicfoundation/hardhat-toolbox"
 
@@ -27,7 +28,7 @@ export default {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200
+        runs: 20
       },
     },
   },

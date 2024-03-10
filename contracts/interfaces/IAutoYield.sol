@@ -26,7 +26,6 @@ interface IAutoYield is IERC721Receiver {
     event BalanceAdded(address account, address token, uint256 amount);
     event BalanceRemoved(address account, address token, uint256 amount);
     event BalanceWithdrawn(address account, address token, address to, uint256 amount);
-    event RewardUpdated(address account, uint64 totalRewardX64, uint64 compounderRewardX64);
 
     // autocompound event
     event AutoCompounded(
@@ -270,14 +269,14 @@ interface IAutoYield is IERC721Receiver {
      */
     function autoCompound(AutoCompoundParams calldata params) external returns (uint256 reward0, uint256 reward1, uint256 compounded0, uint256 compounded1);
 
-    struct DecreaseLiquidityAndCollectParams {
-        uint256 tokenId;
-        uint128 liquidity;
-        uint256 amount0Min;
-        uint256 amount1Min;
-        uint256 deadline;
-        address recipient;
-    }
+//    struct DecreaseLiquidityAndCollectParams {
+//        uint256 tokenId;
+//        uint128 liquidity;
+//        uint256 amount0Min;
+//        uint256 amount1Min;
+//        uint256 deadline;
+//        address recipient;
+//    }
 
     /**
      * @notice Special method to decrease liquidity and collect decreased amount - can only be called by the NFT owner
@@ -286,9 +285,9 @@ interface IAutoYield is IERC721Receiver {
      * @return amount0 amount of token0 removed and collected
      * @return amount1 amount of token1 removed and collected
      */
-    function decreaseLiquidityAndCollect(DecreaseLiquidityAndCollectParams calldata params)
-        external
-        returns (uint256 amount0, uint256 amount1);
+//    function decreaseLiquidityAndCollect(DecreaseLiquidityAndCollectParams calldata params)
+//        external
+//        returns (uint256 amount0, uint256 amount1);
 
     /**
      * @notice Forwards collect call to NonfungiblePositionManager - can only be called by the NFT owner

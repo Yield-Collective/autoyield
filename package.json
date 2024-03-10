@@ -8,7 +8,8 @@
     "@uniswap/v3-core": "^1.0.1",
     "@uniswap/v3-periphery": "^1.4.4",
     "dotenv": "^16.0.1",
-    "hardhat": "^2.21.0"
+    "hardhat": "^2.21.0",
+    "hardhat-contract-sizer": "^2.10.0"
   },
   "dependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",

@@ -5,7 +5,6 @@ pragma abicoder v2;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Multicall.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -25,20 +24,17 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     uint128 constant Q64 = 2**64;
     uint128 constant Q96 = 2**96;
     uint64 constant public MAX_REWARD_X64 = uint64(Q64 / 50);
-    uint32 public constant MIN_TWAP_SECONDS = 60;
-    uint32 public constant MAX_TWAP_TICK_DIFF = 200;
-    uint64 public totalRewardX64 = MAX_REWARD_X64;
-    uint64 public compounderRewardX64 = MAX_REWARD_X64 / 2;
-    uint16 public maxTWAPTickDifference = 100;
-    uint32 public TWAPSeconds = 60;
-    address public withdrawer;
+    uint64 public constant totalRewardX64 = MAX_REWARD_X64;
+    uint64 public constant compounderRewardX64 = MAX_REWARD_X64 / 2;
+    uint16 constant public maxTWAPTickDifference = 100;
+    uint32 constant public TWAPSeconds = 60;
+    address public operator;
 
     IUniswapV3Factory public override factory;
     INonfungiblePositionManager public override npm;
     ISwapRouter public override swapRouter;
     IWETH9 public immutable override weth;
 
-    mapping(address => bool) public operators;
     mapping (uint256 => RangePositionConfig) public rangePositionConfigs;
     mapping(uint256 => address) public override ownerOf;
     mapping(address => uint256[]) public override accountTokens;
@@ -51,40 +47,11 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         factory = IUniswapV3Factory(npm.factory());
         weth = IWETH9(npm.WETH9());
 
-        setOperator(msg.sender, true);
-        setWithdrawer(msg.sender);
-    }
-
-    function setReward(uint64 _totalRewardX64, uint64 _compounderRewardX64) external onlyOwner {
-        require(_totalRewardX64 <= totalRewardX64);
-        require(_compounderRewardX64 <= _totalRewardX64);
-        totalRewardX64 = _totalRewardX64;
-        compounderRewardX64 = _compounderRewardX64;
-        emit RewardUpdated(msg.sender, _totalRewardX64, _compounderRewardX64);
-    }
-
-    function setWithdrawer(address _withdrawer) public onlyOwner {
-        withdrawer = _withdrawer;
-    }
-
-    function setOperator(address _operator, bool _active) public onlyOwner {
-        operators[_operator] = _active;
-    }
-
-    function setTWAPConfig(uint16 _maxTWAPTickDifference, uint32 _TWAPSeconds) public  {
-        if (_TWAPSeconds < MIN_TWAP_SECONDS) {
-            revert InvalidConfig();
-        }
-        if (_maxTWAPTickDifference > MAX_TWAP_TICK_DIFF) {
-            revert InvalidConfig();
-        }
-
-        TWAPSeconds = _TWAPSeconds;
-        maxTWAPTickDifference = _maxTWAPTickDifference;
+        operator = msg.sender;
     }
 
     function withdrawBalances(address[] calldata tokens, address to) external override {
-        if (msg.sender != withdrawer) {
+        if (msg.sender != operator) {
             revert Unauthorized();
         }
 
@@ -93,13 +60,13 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         for(;i < count;++i) {
             uint256 balance = IERC20(tokens[i]).balanceOf(address(this));
             if (balance > 0) {
-                _transferToken(to, IERC20(tokens[i]), balance, true);
+                _transferToken(to, tokens[i], balance, true);
             }
         }
     }
 
     function withdrawETH(address to) external {
-        if (msg.sender != withdrawer) {
+        if (msg.sender != operator) {
             revert Unauthorized();
         }
 
@@ -113,7 +80,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     }
 
     function reBalance(RangeExecuteParams calldata params) external {
-        if (!operators[msg.sender]) {
+        if (msg.sender != operator) {
             revert Unauthorized();
         }
 
@@ -151,7 +118,6 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         (state.amountOutMin,state.currentTick,,) = YieldSwap.validateSwap(params.swap0To1, params.amountIn, state.pool, TWAPSeconds, maxTWAPTickDifference, params.swap0To1 ? config.token0SlippageX64 : config.token1SlippageX64);
 
         if (state.currentTick < state.tickLower - config.lowerTickLimit || state.currentTick >= state.tickUpper + config.upperTickLimit) {
-
             int24 tickSpacing = YieldMath.getTickSpacing(factory, state.fee);
             int24 baseTick = state.currentTick - (((state.currentTick % tickSpacing) + tickSpacing) % tickSpacing);
 
@@ -201,10 +167,10 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
             }
 
             if (state.amount0 - state.amountAdded0 > 0) {
-                _transferToken(state.owner, IERC20(state.token0), state.amount0 - state.amountAdded0, true);
+                _transferToken(state.owner, state.token0, state.amount0 - state.amountAdded0, true);
             }
             if (state.amount1 - state.amountAdded1 > 0) {
-                _transferToken(state.owner, IERC20(state.token1), state.amount1 - state.amountAdded1, true);
+                _transferToken(state.owner, state.token1, state.amount1 - state.amountAdded1, true);
             }
 
             rangePositionConfigs[state.newTokenId] = config;
@@ -358,34 +324,6 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         emit AutoCompounded(msg.sender, params.tokenId, compounded0, compounded1, reward0, reward1, state.token0, state.token1);
     }
 
-    function decreaseLiquidityAndCollect(DecreaseLiquidityAndCollectParams calldata params)
-        override 
-        external  
-        nonReentrant 
-        returns (uint256 amount0, uint256 amount1) 
-    {
-        require(ownerOf[params.tokenId] == msg.sender);
-        (amount0, amount1) = npm.decreaseLiquidity(
-            INonfungiblePositionManager.DecreaseLiquidityParams(
-                params.tokenId, 
-                params.liquidity, 
-                params.amount0Min, 
-                params.amount1Min,
-                params.deadline
-            )
-        );
-
-        INonfungiblePositionManager.CollectParams memory collectParams = 
-            INonfungiblePositionManager.CollectParams(
-                params.tokenId, 
-                params.recipient,
-                uint128(amount0),
-                uint128(amount1)
-            );
-
-        npm.collect(collectParams);
-    }
-
     function collect(INonfungiblePositionManager.CollectParams calldata params) 
         override 
         external
@@ -417,7 +355,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
 
     function withdrawBalance(address token, address to, uint256 amount) external override nonReentrant {
         require(amount > 0);
-        _withdrawBalanceInternal(token, to, amount);
+        _transferToken(to, token, amount, false);
     }
 
     function _increaseBalance(address account, address token, uint256 amount) internal {
@@ -431,9 +369,9 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         accountBalances[account][token] = amount;
 
         if (amount > currentBalance) {
-            emit BalanceAdded(account, token, amount.sub(currentBalance));
+            emit BalanceAdded(account, address(token), amount.sub(currentBalance));
         } else if (amount < currentBalance) {
-            emit BalanceRemoved(account, token, currentBalance.sub(amount));
+            emit BalanceRemoved(account, address(token), currentBalance.sub(amount));
         }
     }
 
@@ -442,19 +380,11 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         uint256 balance1 = accountBalances[msg.sender][token1];
 
         if (balance0 > 0) {
-            _withdrawBalanceInternal(token1, to, balance0);
+            _transferToken(to, token0, balance0, false);
         }
         if (balance1 > 0) {
-            _withdrawBalanceInternal(token1, to, balance1);
+            _transferToken(to, token1, balance1, false);
         }
-    }
-
-    function _withdrawBalanceInternal(address token, address to, uint256 amount) internal {
-        require(amount <= accountBalances[msg.sender][token]);
-        accountBalances[msg.sender][token] = accountBalances[msg.sender][token].sub(amount);
-        emit BalanceRemoved(msg.sender, token, amount);
-        SafeERC20.safeTransfer(IERC20(token), to, amount);
-        emit BalanceWithdrawn(msg.sender, token, to, amount);
     }
 
     function _addToken(uint256 tokenId, address account) internal {
@@ -464,17 +394,11 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
 
         IERC20 tokenA = IERC20(token0);
         IERC20 tokenB = IERC20(token1);
-        uint256 allowance0 = tokenA.allowance(address(this), address(npm));
-        uint256 allowance1 = tokenB.allowance(address(this), address(npm));
 
-        if (allowance0 == 0) {
-            SafeERC20.safeApprove(tokenA, address(npm), type(uint256).max);
-            SafeERC20.safeApprove(tokenB, address(swapRouter), type(uint256).max);
-        }
-        if (allowance1 == 0) {
-            SafeERC20.safeApprove(tokenA, address(npm), type(uint256).max);
-            SafeERC20.safeApprove(tokenB, address(swapRouter), type(uint256).max);
-        }
+        SafeERC20.forceApprove(tokenA, address(npm), type(uint256).max);
+        SafeERC20.forceApprove(tokenB, address(npm), type(uint256).max);
+        SafeERC20.forceApprove(tokenA, address(swapRouter), type(uint256).max);
+        SafeERC20.forceApprove(tokenB, address(swapRouter), type(uint256).max);
 
         accountTokens[account].push(tokenId);
         ownerOf[tokenId] = account;
@@ -501,15 +425,20 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         delete ownerOf[tokenId];
     }
 
-    function _transferToken(address to, IERC20 token, uint256 amount, bool unwrap) internal {
-        if (address(weth) == address(token) && unwrap) {
+    function _transferToken(address to, address token, uint256 amount, bool unwrap) internal {
+        accountBalances[msg.sender][token] = accountBalances[msg.sender][token].sub(amount);
+        emit BalanceRemoved(msg.sender, token, amount);
+        if (address(weth) == token && unwrap) {
             weth.withdraw(amount);
             (bool sent, ) = to.call{value: amount}("");
             if (!sent) {
                 revert EtherSendFailed();
+            } else {
+                emit BalanceWithdrawn(msg.sender, token, to, amount);
             }
         } else {
-            SafeERC20.safeTransfer(token, to, amount);
+            SafeERC20.safeTransfer(IERC20(token), to, amount);
+            emit BalanceWithdrawn(msg.sender, token, to, amount);
         }
     }
 
