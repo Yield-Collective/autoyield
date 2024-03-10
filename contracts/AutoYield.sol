@@ -2,11 +2,9 @@
 pragma solidity ^0.8.0;
 pragma abicoder v2;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/utils/Multicall.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/Context.sol";
 
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
@@ -17,7 +15,7 @@ import "./interfaces/IAutoYield.sol";
 import "./lib/YieldMath.sol";
 import "./lib/YieldSwap.sol";
 
-contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
+contract AutoYield is IAutoYield, ReentrancyGuard, Context {
     using SafeMath for uint256;
     address public operator;
 
@@ -29,10 +27,14 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     mapping(uint256 => RangePositionConfig) public rangePositionConfigs;
     mapping(uint256 => address) public override ownerOf;
     mapping(address => uint256[]) public override accountTokens;
-    mapping(address => mapping(address => uint256)) public override accountBalances;
+    mapping(address => mapping(address => uint256))
+        public
+        override accountBalances;
 
-    constructor(INonfungiblePositionManager _nonfungiblePositionManager, ISwapRouter _swapRouter)
-    {
+    constructor(
+        INonfungiblePositionManager _nonfungiblePositionManager,
+        ISwapRouter _swapRouter
+    ) {
         npm = _nonfungiblePositionManager;
         swapRouter = _swapRouter;
         factory = npm.factory();
@@ -41,17 +43,33 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         operator = msg.sender;
     }
 
-    function withdrawBalances(address[] calldata tokens, address to) external override {
+    function multicall(bytes[] calldata data) external returns (bytes[] memory results) {
+    bool useSenderAsContext = msg.sender == _msgSender();
+    results = new bytes[](data.length);
+
+    for (uint256 i = 0; i < data.length; ++i) {
+        bytes memory callData = useSenderAsContext ? data[i] : bytes.concat(data[i], abi.encode(msg.sender));
+        (bool success, bytes memory result) = address(this).delegatecall(callData);
+        require(success);
+        results[i] = result;
+    }
+    return results;
+}
+
+    function withdrawBalances(
+        address[] calldata tokens,
+        address to
+    ) external override {
         if (msg.sender != operator) {
             revert Unauthorized();
         }
 
         uint i;
         uint count = tokens.length;
-        for(;i < count;++i) {
+        for (; i < count; ++i) {
             uint256 balance = IERC20(tokens[i]).balanceOf(address(this));
             if (balance > 0) {
-                _transferToken(to, tokens[i], balance, true);
+                _tT(to, tokens[i], balance, true);
             }
         }
     }
@@ -63,68 +81,142 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
 
         uint256 balance = address(this).balance;
         if (balance > 0) {
-            (bool sent,) = to.call{value: balance}("");
+            (bool sent, ) = to.call{value: balance}("");
             if (!sent) {
                 revert EtherSendFailed();
             }
         }
     }
 
-    function reBalance(RangeExecuteParams calldata params) external {
+    function reB(RangeExecuteParams calldata params) external {
         if (msg.sender != operator) {
             revert Unauthorized();
         }
 
         RangeExecuteState memory state;
-        RangePositionConfig memory config = rangePositionConfigs[params.tokenId];
+        RangePositionConfig memory config = rangePositionConfigs[
+            params.tokenId
+        ];
 
         if (config.lowerTickDelta == config.upperTickDelta) {
             revert NotConfigured();
         }
 
-        if (config.onlyFees && params.rewardX64 > config.maxRewardX64 || !config.onlyFees && params.rewardX64 > config.maxRewardX64) {
+        if (
+            (config.onlyFees && params.rewardX64 > config.maxRewardX64) ||
+            (!config.onlyFees && params.rewardX64 > config.maxRewardX64)
+        ) {
             revert ExceedsMaxReward();
         }
 
-        (,, state.token0, state.token1, state.fee, state.tickLower, state.tickUpper, state.liquidity, , , , ) =  npm.positions(params.tokenId);
+        (
+            ,
+            ,
+            state.token0,
+            state.token1,
+            state.fee,
+            state.tickLower,
+            state.tickUpper,
+            state.liquidity,
+            ,
+            ,
+            ,
+
+        ) = npm.positions(params.tokenId);
 
         if (state.liquidity != params.liquidity) {
             revert LiquidityChanged();
         }
 
-        (state.amount0, state.amount1, state.feeAmount0, state.feeAmount1) = YieldSwap.decreaseFullLiquidityAndCollect(npm, params.tokenId, state.liquidity, params.amountRemoveMin0, params.amountRemoveMin1, params.deadline);
+        (
+            state.amount0,
+            state.amount1,
+            state.feeAmount0,
+            state.feeAmount1
+        ) = YieldSwap.decreaseFullLiquidityAndCollect(
+            npm,
+            params.tokenId,
+            state.liquidity,
+            params.amountRemoveMin0,
+            params.amountRemoveMin1,
+            params.deadline
+        );
 
         if (config.onlyFees) {
-            state.protocolReward0 = state.feeAmount0 * params.rewardX64 / YieldSwap.Q64;
-            state.protocolReward1 = state.feeAmount1 * params.rewardX64 / YieldSwap.Q64;
+            state.protocolReward0 =
+                (state.feeAmount0 * params.rewardX64) /
+                YieldSwap.Q64;
+            state.protocolReward1 =
+                (state.feeAmount1 * params.rewardX64) /
+                YieldSwap.Q64;
             state.amount0 -= state.protocolReward0;
             state.amount1 -= state.protocolReward1;
         }
 
-        if (params.swap0To1 && params.amountIn > state.amount0 || !params.swap0To1 && params.amountIn > state.amount1) {
+        if (
+            (params.swap0To1 && params.amountIn > state.amount0) ||
+            (!params.swap0To1 && params.amountIn > state.amount1)
+        ) {
             revert SwapAmountTooLarge();
         }
 
-        state.pool = YieldSwap.getPool(factory, state.token0, state.token1, state.fee);
-        (state.amountOutMin,state.currentTick,,) = YieldSwap.validateSwap(params.swap0To1, params.amountIn, state.pool, params.swap0To1 ? config.token0SlippageX64 : config.token1SlippageX64);
+        state.pool = YieldSwap.getPool(
+            factory,
+            state.token0,
+            state.token1,
+            state.fee
+        );
+        (state.amountOutMin, state.currentTick, , ) = YieldSwap.validateSwap(
+            params.swap0To1,
+            params.amountIn,
+            state.pool,
+            params.swap0To1
+                ? config.token0SlippageX64
+                : config.token1SlippageX64
+        );
 
-        if (state.currentTick < state.tickLower - config.lowerTickLimit || state.currentTick >= state.tickUpper + config.upperTickLimit) {
+        if (
+            state.currentTick < state.tickLower - config.lowerTickLimit ||
+            state.currentTick >= state.tickUpper + config.upperTickLimit
+        ) {
             int24 tickSpacing = YieldMath.getTickSpacing(factory, state.fee);
-            int24 baseTick = state.currentTick - (((state.currentTick % tickSpacing) + tickSpacing) % tickSpacing);
+            int24 baseTick = state.currentTick -
+                (((state.currentTick % tickSpacing) + tickSpacing) %
+                    tickSpacing);
 
-            if (baseTick + config.lowerTickDelta == state.tickLower && baseTick + config.upperTickDelta == state.tickUpper) {
+            if (
+                baseTick + config.lowerTickDelta == state.tickLower &&
+                baseTick + config.upperTickDelta == state.tickUpper
+            ) {
                 revert SameRange();
             }
 
-            (state.amountInDelta, state.amountOutDelta) = YieldSwap.safeSwap(address(swapRouter), params.swap0To1 ? IERC20(state.token0) : IERC20(state.token1), params.swap0To1 ? IERC20(state.token1) : IERC20(state.token0), params.amountIn, state.amountOutMin, params.swapData);
+            (state.amountInDelta, state.amountOutDelta) = YieldSwap.safeSwap(
+                address(swapRouter),
+                params.swap0To1 ? IERC20(state.token0) : IERC20(state.token1),
+                params.swap0To1 ? IERC20(state.token1) : IERC20(state.token0),
+                params.amountIn,
+                state.amountOutMin,
+                params.swapData
+            );
 
-            state.amount0 = params.swap0To1 ? state.amount0 - state.amountInDelta : state.amount0 + state.amountOutDelta;
-            state.amount1 = params.swap0To1 ? state.amount1 + state.amountOutDelta : state.amount1 - state.amountInDelta;
-            state.maxAddAmount0 = config.onlyFees ? state.amount0 : state.amount0 * YieldSwap.Q64 / (params.rewardX64 + YieldSwap.Q64);
-            state.maxAddAmount1 = config.onlyFees ? state.amount1 : state.amount1 * YieldSwap.Q64 / (params.rewardX64 + YieldSwap.Q64);
+            state.amount0 = params.swap0To1
+                ? state.amount0 - state.amountInDelta
+                : state.amount0 + state.amountOutDelta;
+            state.amount1 = params.swap0To1
+                ? state.amount1 + state.amountOutDelta
+                : state.amount1 - state.amountInDelta;
+            state.maxAddAmount0 = config.onlyFees
+                ? state.amount0
+                : (state.amount0 * YieldSwap.Q64) /
+                    (params.rewardX64 + YieldSwap.Q64);
+            state.maxAddAmount1 = config.onlyFees
+                ? state.amount1
+                : (state.amount1 * YieldSwap.Q64) /
+                    (params.rewardX64 + YieldSwap.Q64);
 
-            INonfungiblePositionManager.MintParams memory mintParams =
-                                INonfungiblePositionManager.MintParams(
+            INonfungiblePositionManager.MintParams
+                memory mintParams = INonfungiblePositionManager.MintParams(
                     address(state.token0),
                     address(state.token1),
                     state.fee,
@@ -138,10 +230,19 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
                     params.deadline
                 );
 
-            SafeERC20.safeApprove(IERC20(state.token0), address(npm), state.maxAddAmount0);
-            SafeERC20.safeApprove(IERC20(state.token1), address(npm), state.maxAddAmount1);
+            SafeERC20.safeApprove(
+                IERC20(state.token0),
+                address(npm),
+                state.maxAddAmount0
+            );
+            SafeERC20.safeApprove(
+                IERC20(state.token1),
+                address(npm),
+                state.maxAddAmount1
+            );
 
-            (state.newTokenId,,state.amountAdded0,state.amountAdded1) = npm.mint(mintParams);
+            (state.newTokenId, , state.amountAdded0, state.amountAdded1) = npm
+                .mint(mintParams);
 
             SafeERC20.safeApprove(IERC20(state.token0), address(npm), 0);
             SafeERC20.safeApprove(IERC20(state.token1), address(npm), 0);
@@ -151,17 +252,31 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
             npm.safeTransferFrom(address(this), state.owner, state.newTokenId);
 
             if (!config.onlyFees) {
-                state.protocolReward0 = state.amountAdded0 * params.rewardX64 / YieldSwap.Q64;
-                state.protocolReward1 = state.amountAdded1 * params.rewardX64 / YieldSwap.Q64;
+                state.protocolReward0 =
+                    (state.amountAdded0 * params.rewardX64) /
+                    YieldSwap.Q64;
+                state.protocolReward1 =
+                    (state.amountAdded1 * params.rewardX64) /
+                    YieldSwap.Q64;
                 state.amount0 -= state.protocolReward0;
                 state.amount1 -= state.protocolReward1;
             }
 
             if (state.amount0 - state.amountAdded0 > 0) {
-                _transferToken(state.owner, state.token0, state.amount0 - state.amountAdded0, true);
+                _tT(
+                    state.owner,
+                    state.token0,
+                    state.amount0 - state.amountAdded0,
+                    true
+                );
             }
             if (state.amount1 - state.amountAdded1 > 0) {
-                _transferToken(state.owner, state.token1, state.amount1 - state.amountAdded1, true);
+                _tT(
+                    state.owner,
+                    state.token1,
+                    state.amount1 - state.amountAdded1,
+                    true
+                );
             }
 
             rangePositionConfigs[state.newTokenId] = config;
@@ -178,14 +293,27 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
             );
 
             delete rangePositionConfigs[params.tokenId];
-            emit RangePositionConfigured(params.tokenId, 0, 0, 0, 0, 0, 0, false, 0);
+            emit RangePositionConfigured(
+                params.tokenId,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                false,
+                0
+            );
             emit RangeChanged(params.tokenId, state.newTokenId);
         } else {
             revert NotReady();
         }
     }
 
-    function configToken(uint256 tokenId, RangePositionConfig calldata config) external {
+    function cT (
+        uint256 tokenId,
+        RangePositionConfig calldata config
+    ) external {
         address owner = npm.ownerOf(tokenId);
         if (owner != msg.sender) {
             revert Unauthorized();
@@ -218,51 +346,86 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
     ) external override nonReentrant returns (bytes4) {
         require(msg.sender == address(npm));
 
-        _addToken(tokenId, from);
+        _aT(tokenId, from);
         emit TokenDeposited(from, tokenId);
         return this.onERC721Received.selector;
     }
 
-    function balanceOf(address account) override external view returns (uint256 balance) {
+    function balanceOf(
+        address account
+    ) external view override returns (uint256 balance) {
         return accountTokens[account].length;
     }
 
-    function autoCompound(AutoCompoundParams memory params)
-        override 
-        external 
+    function autoCompound(
+        AutoCompoundParams memory params
+    )
+        external
+        override
         nonReentrant
-        returns (uint256 reward0, uint256 reward1, uint256 compounded0, uint256 compounded1)
+        returns (
+            uint256 reward0,
+            uint256 reward1,
+            uint256 compounded0,
+            uint256 compounded1
+        )
     {
         require(ownerOf[params.tokenId] != address(0));
 
         AutoCompoundState memory state;
         (state.amount0, state.amount1) = npm.collect(
-            INonfungiblePositionManager.CollectParams(params.tokenId, address(this), type(uint128).max, type(uint128).max)
+            INonfungiblePositionManager.CollectParams(
+                params.tokenId,
+                address(this),
+                type(uint128).max,
+                type(uint128).max
+            )
         );
-        (, , state.token0, state.token1, state.fee, state.tickLower, state.tickUpper, , , , , ) = 
-            npm.positions(params.tokenId);
+        (
+            ,
+            ,
+            state.token0,
+            state.token1,
+            state.fee,
+            state.tickLower,
+            state.tickUpper,
+            ,
+            ,
+            ,
+            ,
+
+        ) = npm.positions(params.tokenId);
 
         state.tokenOwner = ownerOf[params.tokenId];
-        state.amount0 = state.amount0.add(accountBalances[state.tokenOwner][state.token0]);
-        state.amount1 = state.amount1.add(accountBalances[state.tokenOwner][state.token1]);
+        state.amount0 = state.amount0.add(
+            accountBalances[state.tokenOwner][state.token0]
+        );
+        state.amount1 = state.amount1.add(
+            accountBalances[state.tokenOwner][state.token1]
+        );
 
         if (state.amount0 > 0 || state.amount1 > 0) {
             SwapParams memory swapParams = SwapParams(
-                state.token0, 
-                state.token1, 
-                state.fee, 
-                state.tickLower, 
-                state.tickUpper, 
-                state.amount0, 
-                state.amount1, 
-                block.timestamp, 
-                params.rewardConversion, 
-                state.tokenOwner == msg.sender, 
+                state.token0,
+                state.token1,
+                state.fee,
+                state.tickLower,
+                state.tickUpper,
+                state.amount0,
+                state.amount1,
+                block.timestamp,
+                params.rewardConversion,
+                state.tokenOwner == msg.sender,
                 params.doSwap
             );
 
-            (state.amount0, state.amount1, state.priceX96, state.maxAddAmount0, state.maxAddAmount1) = 
-                YieldSwap.swapToPriceRatio(factory, swapRouter, swapParams);
+            (
+                state.amount0,
+                state.amount1,
+                state.priceX96,
+                state.maxAddAmount0,
+                state.maxAddAmount1
+            ) = YieldSwap.swapToPriceRatio(factory, swapRouter, swapParams);
 
             if (state.maxAddAmount0 > 0 || state.maxAddAmount1 > 0) {
                 (, compounded0, compounded1) = npm.increaseLiquidity(
@@ -290,36 +453,60 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
                 isNotOwner
             );
 
-            _setBalance(state.tokenOwner, state.token0, state.amount0.sub(compounded0).sub(amount0Fees));
-            _setBalance(state.tokenOwner, state.token1, state.amount1.sub(compounded1).sub(amount1Fees));
+            _sB(
+                state.tokenOwner,
+                state.token0,
+                state.amount0.sub(compounded0).sub(amount0Fees)
+            );
+            _sB(
+                state.tokenOwner,
+                state.token1,
+                state.amount1.sub(compounded1).sub(amount1Fees)
+            );
 
             if (isNotOwner) {
-                uint64 protocolRewardX64 = YieldSwap.totalRewardX64 - YieldSwap.compounderRewardX64;
-                uint256 protocolFees0 = amount0Fees.mul(protocolRewardX64).div(YieldSwap.totalRewardX64);
-                uint256 protocolFees1 = amount1Fees.mul(protocolRewardX64).div(YieldSwap.totalRewardX64);
+                uint64 protocolRewardX64 = YieldSwap.totalRewardX64 -
+                    YieldSwap.compounderRewardX64;
+                uint256 protocolFees0 = amount0Fees.mul(protocolRewardX64).div(
+                    YieldSwap.totalRewardX64
+                );
+                uint256 protocolFees1 = amount1Fees.mul(protocolRewardX64).div(
+                    YieldSwap.totalRewardX64
+                );
 
                 reward0 = amount0Fees.sub(protocolFees0);
                 reward1 = amount1Fees.sub(protocolFees1);
 
-                _increaseBalance(msg.sender, state.token0, reward0);
-                _increaseBalance(msg.sender, state.token1, reward1);
-                _increaseBalance(owner(), state.token0, protocolFees0);
-                _increaseBalance(owner(), state.token1, protocolFees1);
+                _iB(msg.sender, state.token0, reward0);
+                _iB(msg.sender, state.token1, reward1);
+                _iB(operator, state.token0, protocolFees0);
+                _iB(operator, state.token1, protocolFees1);
             }
         }
 
         if (params.withdrawReward) {
-            _withdrawFullBalances(state.token0, state.token1, msg.sender);
+            _wFB(state.token0, state.token1, msg.sender);
         }
 
-        emit AutoCompounded(msg.sender, params.tokenId, compounded0, compounded1, reward0, reward1, state.token0, state.token1);
+        emit AutoCompounded(
+            msg.sender,
+            params.tokenId,
+            compounded0,
+            compounded1,
+            reward0,
+            reward1,
+            state.token0,
+            state.token1
+        );
     }
 
-    function collect(INonfungiblePositionManager.CollectParams calldata params) 
-        override 
+    function collect(
+        INonfungiblePositionManager.CollectParams calldata params
+    )
         external
-        nonReentrant 
-        returns (uint256 amount0, uint256 amount1) 
+        override
+        nonReentrant
+        returns (uint256 amount0, uint256 amount1)
     {
         require(ownerOf[params.tokenId] == msg.sender);
         return npm.collect(params);
@@ -334,54 +521,83 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         require(to != address(this));
         require(ownerOf[tokenId] == msg.sender);
 
-        _removeToken(msg.sender, tokenId);
+        _rT(msg.sender, tokenId);
         npm.safeTransferFrom(address(this), to, tokenId, data);
         emit TokenWithdrawn(msg.sender, to, tokenId);
 
         if (withdrawBalances_) {
-            (, , address token0, address token1, , , , , , , , ) = npm.positions(tokenId);
-            _withdrawFullBalances(token0, token1, to);
+            (, , address token0, address token1, , , , , , , , ) = npm
+                .positions(tokenId);
+            _wFB(token0, token1, to);
         }
     }
 
-    function withdrawBalance(address token, address to, uint256 amount) external override nonReentrant {
+    function withdrawBalance(
+        address token,
+        address to,
+        uint256 amount
+    ) external override nonReentrant {
         require(amount > 0);
-        _transferToken(to, token, amount, false);
+        _tT(to, token, amount, false);
     }
 
-    function _increaseBalance(address account, address token, uint256 amount) internal {
-        accountBalances[account][token] = accountBalances[account][token].add(amount);
+    function _iB(
+        address account,
+        address token,
+        uint256 amount
+    ) internal {
+        accountBalances[account][token] = accountBalances[account][token].add(
+            amount
+        );
         emit BalanceAdded(account, token, amount);
     }
 
-    function _setBalance(address account, address token, uint256 amount) internal {
+    function _sB(
+        address account,
+        address token,
+        uint256 amount
+    ) internal {
         uint currentBalance = accountBalances[account][token];
 
         accountBalances[account][token] = amount;
 
         if (amount > currentBalance) {
-            emit BalanceAdded(account, address(token), amount.sub(currentBalance));
+            emit BalanceAdded(
+                account,
+                address(token),
+                amount.sub(currentBalance)
+            );
         } else if (amount < currentBalance) {
-            emit BalanceRemoved(account, address(token), currentBalance.sub(amount));
+            emit BalanceRemoved(
+                account,
+                address(token),
+                currentBalance.sub(amount)
+            );
         }
     }
 
-    function _withdrawFullBalances(address token0, address token1, address to) internal {
+    function _wFB(
+        address token0,
+        address token1,
+        address to
+    ) internal {
         uint256 balance0 = accountBalances[msg.sender][token0];
         uint256 balance1 = accountBalances[msg.sender][token1];
 
         if (balance0 > 0) {
-            _transferToken(to, token0, balance0, false);
+            _tT(to, token0, balance0, false);
         }
         if (balance1 > 0) {
-            _transferToken(to, token1, balance1, false);
+            _tT(to, token1, balance1, false);
         }
     }
 
-    function _addToken(uint256 tokenId, address account) internal {
+    function _aT(uint256 tokenId, address account) internal {
         require(accountTokens[account].length < 100);
 
-        (, , address token0, address token1, , , , , , , , ) = npm.positions(tokenId);
+        (, , address token0, address token1, , , , , , , , ) = npm.positions(
+            tokenId
+        );
 
         IERC20 tokenA = IERC20(token0);
         IERC20 tokenB = IERC20(token1);
@@ -395,7 +611,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         ownerOf[tokenId] = account;
     }
 
-    function _removeToken(address account, uint256 tokenId) internal {
+    function _rT(address account, uint256 tokenId) internal {
         uint256[] memory accountTokensArr = accountTokens[account];
         uint256 len = accountTokensArr.length;
         uint256 assetIndex = len;
@@ -416,8 +632,14 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall, Ownable {
         delete ownerOf[tokenId];
     }
 
-    function _transferToken(address to, address token, uint256 amount, bool unwrap) internal {
-        accountBalances[msg.sender][token] = accountBalances[msg.sender][token].sub(amount);
+    function _tT(
+        address to,
+        address token,
+        uint256 amount,
+        bool unwrap
+    ) internal {
+        accountBalances[msg.sender][token] = accountBalances[msg.sender][token]
+            .sub(amount);
         emit BalanceRemoved(msg.sender, token, amount);
         if (weth == token && unwrap) {
             IWETH9(weth).withdraw(amount);
