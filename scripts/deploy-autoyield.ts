@@ -1,5 +1,3 @@
-import {ethers, JsonRpcProvider } from "ethers";
-
 require('dotenv').config()
 
 import hre from "hardhat";

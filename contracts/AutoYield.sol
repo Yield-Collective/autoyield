@@ -291,7 +291,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
     }
 
     function configToken(uint256 tokenId, RangePositionConfig calldata config) external {
-        address owner = npm.ownerOf(tokenId);
+        address owner = ownerOf[tokenId];
         if (owner != msg.sender) {
             revert Unauthorized();
         }
@@ -536,7 +536,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
                 address(token),
                 amount.sub(currentBalance)
             );
-        } else if (amount < currentBalance) {
+        } else {
             emit BalanceRemoved(
                 account,
                 address(token),
