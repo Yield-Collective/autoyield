@@ -22,7 +22,7 @@ export default async function main(compoundorAddress: string) {
   const deployedAddress = await contract.getAddress();
   console.log("Deployed at", deployedAddress)
   console.log("Verifying contract", deployedAddress)
-  await hre.ethers.provider.waitForTransaction(contract.deploymentTransaction()?.hash as string, 6)
+  await new Promise(r => setTimeout(r, 30 * 1000));
   await hre.run("verify:verify", {
     address: deployedAddress,
     constructorArguments: [compoundorAddress]
