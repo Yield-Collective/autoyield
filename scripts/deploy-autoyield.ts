@@ -11,29 +11,27 @@ export default async function main() {
 
   console.log("Deploying on", hre.network.name)
 
-  const constructorArguments = [nonfungiblePositionManagerAddress, swapRouterAddress]
   const contractFactory = await hre.ethers.getContractFactory("AutoYield", signer);
-  const deployTx = await contractFactory.getDeployTransaction(...constructorArguments, { gasPrice })
+  const deployTx = await contractFactory.getDeployTransaction(nonfungiblePositionManagerAddress, swapRouterAddress, { gasPrice })
   const gasLimit = await hre.ethers.provider.estimateGas(deployTx)
-  const contract = await contractFactory.deploy(...constructorArguments, {
+  const contract = await contractFactory.deploy(nonfungiblePositionManagerAddress, swapRouterAddress, {
     gasPrice,
     gasLimit: gasLimit * 12n / 10n
   });
-  await contract.deployed();
-
+  await contract.waitForDeployment();
 
   //await contract.transferOwnership(process.env.MULTISIG_ACCOUNT);
 
-  console.log("Deployed at", contract.address)
-
-  console.log("Verifying contract", contract.address)
+  const deployedAddress = await contract.getAddress();
+  console.log("Deployed at", deployedAddress)
+  console.log("Verifying contract", deployedAddress)
   await hre.ethers.provider.waitForTransaction(contract.deploymentTransaction()?.hash as string, 6)
   await hre.run("verify:verify", {
-    address: contract.address,
-    constructorArguments
+    address: deployedAddress,
+    constructorArguments: [nonfungiblePositionManagerAddress, swapRouterAddress]
   });
 
-  console.log("Verified at", contract.address)
+  console.log("Verified at", deployedAddress)
 
-  return contract.address
+  return deployedAddress
 }

@@ -19,19 +19,20 @@ export default async function main() {
     gasPrice,
     gasLimit: gasLimit * 12n / 10n
   });
-  await contract.deployed();
+  await contract.waitForDeployment();
 
   //await contract.transferOwnership(process.env.MULTISIG_ACCOUNT);
 
-  console.log("Deployed at", contract.address)
-  console.log("Verifying contract", contract.address)
+  const deployedAddress = await contract.getAddress();
+  console.log("Deployed at", deployedAddress)
+  console.log("Verifying contract", deployedAddress)
   await hre.ethers.provider.waitForTransaction(contract.deploymentTransaction()?.hash as string, 6)
   await hre.run("verify:verify", {
-    address: contract.address,
+    address: deployedAddress,
     constructorArguments: constructorArguments,
   });
 
-  console.log("Verified at", contract.address)
+  console.log("Verified at", deployedAddress)
 }
 
 module.exports = main;
