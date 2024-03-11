@@ -1,11 +1,9 @@
 import deployYield from './deploy-autoyield'
 import deployMultiYield from './deploy-multiyield'
-import deploySelfYield from './deploy-selfyield'
 
 const main = async () => {
   const compoundorAddress = await deployYield()
   await deployMultiYield(compoundorAddress);
-  //await deploySelfYield(compoundorAddress);
 }
 
 main()

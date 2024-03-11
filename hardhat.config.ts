@@ -1,9 +1,8 @@
-import {task} from "hardhat/config";
-
 require('dotenv').config()
-require("hardhat-contract-sizer");
 
 import "@nomicfoundation/hardhat-toolbox"
+import "hardhat-contract-sizer"
+import {task} from "hardhat/config";
 
 task("accounts", "Prints the list of accounts", async (taskArgs, hre) => {
   const accounts = await hre.ethers.getSigners();
