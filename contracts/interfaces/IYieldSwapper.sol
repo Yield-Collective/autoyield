@@ -48,6 +48,4 @@ interface IYieldSwapper {
     function swapRouter() external view returns (ISwapRouter);
 
     function operator() external view returns(address);
-
-    function swapRouter() external view returns(ISwapRouter);
 }
