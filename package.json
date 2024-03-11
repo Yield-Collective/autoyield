@@ -10,6 +10,7 @@
     "dotenv": "^16.0.1",
     "hardhat": "^2.21.0",
     "hardhat-contract-sizer": "^2.10.0",
+    "hardhat-gas-reporter": "^1.0.10",
     "solady": "^0.0.177"
   },
   "dependencies": {

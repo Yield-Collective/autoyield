@@ -67,7 +67,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         }
     }
 
-    function reBalance(RangeExecuteParams calldata params) external {
+    function autoRange(RangeExecuteParams calldata params) external {
         if (msg.sender != operator) {
             revert Unauthorized();
         }
