@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-
 import "solady/src/utils/SafeTransferLib.sol";
+import "solady/src/utils/FixedPointMathLib.sol";
 
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
@@ -16,7 +15,8 @@ import "../interfaces/IYieldSwapper.sol";
 import "../lib/YieldMath.sol";
 
 abstract contract YieldSwapper is IYieldSwapper {
-    using SafeMath for uint256;
+    using FixedPointMathLib for uint256;
+    using FixedPointMathLib for uint160;
     using SafeTransferLib for address;
 
     uint128 constant public Q96 = 2**96;
@@ -41,30 +41,30 @@ abstract contract YieldSwapper is IYieldSwapper {
             revert TWAPCheckFailed();
         }
 
-        priceX96 = FullMath.mulDiv(sqrtPriceX96, sqrtPriceX96, Q96);
+        priceX96 = sqrtPriceX96.fullMulDiv(sqrtPriceX96, Q96);
         if (swap0For1) {
-            amountOutMin = FullMath.mulDiv(amountIn * (Q64 - maxPriceDifferenceX64), priceX96, Q96 * Q64);
+            amountOutMin = (amountIn * (Q64 - maxPriceDifferenceX64)).fullMulDiv(priceX96, Q96 * Q64);
         } else {
-            amountOutMin = FullMath.mulDiv(amountIn * (Q64 - maxPriceDifferenceX64), Q96, priceX96 * Q64);
+            amountOutMin = (amountIn * (Q64 - maxPriceDifferenceX64)).fullMulDiv(Q96, priceX96 * Q64);
         }
     }
 
     function _calculateCompoundFee(RewardConversion rewardConversion, uint256 amount0, uint256 amount1, uint256 priceX96, uint256 compounded0, uint256 compounded1, bool isNotOwner) internal pure returns (uint256 amount0Fees, uint256 amount1Fees) {
         if (isNotOwner) {
             if (rewardConversion == RewardConversion.NONE) {
-                amount0Fees = compounded0.mul(totalRewardX64).div(Q64);
-                amount1Fees = compounded1.mul(totalRewardX64).div(Q64);
+                amount0Fees = compounded0.rawMul(totalRewardX64).rawDiv(Q64);
+                amount1Fees = compounded1.rawMul(totalRewardX64).rawDiv(Q64);
             } else {
-                uint addedTotal0 = compounded0.add(compounded1.mul(Q96).div(priceX96));
+                uint addedTotal0 = compounded0.rawAdd(compounded1.rawMul(Q96).rawDiv(priceX96));
                 if (rewardConversion == RewardConversion.TOKEN_0) {
-                    amount0Fees = addedTotal0.mul(totalRewardX64).div(Q64);
-                    if (amount0Fees > amount0.sub(compounded0)) {
-                        amount0Fees = amount0.sub(compounded0);
+                    amount0Fees = addedTotal0.rawMul(totalRewardX64).rawDiv(Q64);
+                    if (amount0Fees > amount0.rawSub(compounded0)) {
+                        amount0Fees = amount0.rawSub(compounded0);
                     }
                 } else {
-                    amount1Fees = addedTotal0.mul(priceX96).div(Q96).mul(totalRewardX64).div(Q64);
-                    if (amount1Fees > amount1.sub(compounded1)) {
-                        amount1Fees = amount1.sub(compounded1);
+                    amount1Fees = addedTotal0.rawMul(priceX96).rawDiv(Q96).rawMul(totalRewardX64).rawDiv(Q64);
+                    if (amount1Fees > amount1.rawSub(compounded1)) {
+                        amount1Fees = amount1.rawSub(compounded1);
                     }
                 }
             }
@@ -137,15 +137,15 @@ abstract contract YieldSwapper is IYieldSwapper {
                 state.delta0 = amount0;
                 state.sell0 = true;
             } else if (state.positionAmount1 == 0) {
-                state.delta0 = amount1.mul(Q96).div(priceX96);
+                state.delta0 = amount1.rawMul(Q96).rawDiv(priceX96);
                 state.sell0 = false;
             } else {
-                state.amountRatioX96 = state.positionAmount0.mul(Q96).div(state.positionAmount1);
-                state.sell0 = (state.amountRatioX96.mul(amount1) < amount0.mul(Q96));
+                state.amountRatioX96 = state.positionAmount0.rawMul(Q96).rawDiv(state.positionAmount1);
+                state.sell0 = (state.amountRatioX96.rawMul(amount1) < amount0.rawMul(Q96));
                 if (state.sell0) {
-                    state.delta0 = amount0.mul(Q96).sub(state.amountRatioX96.mul(amount1)).div(state.amountRatioX96.mul(priceX96).div(Q96).add(Q96));
+                    state.delta0 = amount0.rawMul(Q96).rawSub(state.amountRatioX96.rawMul(amount1)).rawDiv(state.amountRatioX96.rawMul(priceX96).rawDiv(Q96).rawAdd(Q96));
                 } else {
-                    state.delta0 = state.amountRatioX96.mul(amount1).sub(amount0.mul(Q96)).div(state.amountRatioX96.mul(priceX96).div(Q96).add(Q96));
+                    state.delta0 = state.amountRatioX96.rawMul(amount1).rawSub(amount0.rawMul(Q96)).rawDiv(state.amountRatioX96.rawMul(priceX96).rawDiv(Q96).rawAdd(Q96));
                 }
             }
 
@@ -154,28 +154,28 @@ abstract contract YieldSwapper is IYieldSwapper {
                     state.rewardAmount0 = state.totalReward0;
                     if (state.sell0) {
                         if (state.delta0 >= state.totalReward0) {
-                            state.delta0 = state.delta0.sub(state.totalReward0);
+                            state.delta0 = state.delta0.rawSub(state.totalReward0);
                         } else {
-                            state.delta0 = state.totalReward0.sub(state.delta0);
+                            state.delta0 = state.totalReward0.rawSub(state.delta0);
                             state.sell0 = false;
                         }
                     } else {
-                        state.delta0 = state.delta0.add(state.totalReward0);
-                        if (state.delta0 > amount1.mul(Q96).div(priceX96)) {
-                            state.delta0 = amount1.mul(Q96).div(priceX96);
+                        state.delta0 = state.delta0.rawAdd(state.totalReward0);
+                        if (state.delta0 > amount1.rawMul(Q96).rawDiv(priceX96)) {
+                            state.delta0 = amount1.rawMul(Q96).rawDiv(priceX96);
                         }
                     }
                 } else if (params.bc == RewardConversion.TOKEN_1) {
-                    state.rewardAmount1 = state.totalReward0.mul(priceX96).div(Q96);
+                    state.rewardAmount1 = state.totalReward0.rawMul(priceX96).rawDiv(Q96);
                     if (!state.sell0) {
                         if (state.delta0 >= state.totalReward0) {
-                            state.delta0 = state.delta0.sub(state.totalReward0);
+                            state.delta0 = state.delta0.rawSub(state.totalReward0);
                         } else {
-                            state.delta0 = state.totalReward0.sub(state.delta0);
+                            state.delta0 = state.totalReward0.rawSub(state.delta0);
                             state.sell0 = true;
                         }
                     } else {
-                        state.delta0 = state.delta0.add(state.totalReward0);
+                        state.delta0 = state.delta0.rawAdd(state.totalReward0);
                         if (state.delta0 > amount0) {
                             state.delta0 = amount0;
                         }
@@ -190,18 +190,18 @@ abstract contract YieldSwapper is IYieldSwapper {
                         state.delta0,
                         params.deadline
                     );
-                    amount0 = amount0.sub(state.delta0);
-                    amount1 = amount1.add(amountOut);
+                    amount0 = amount0.rawSub(state.delta0);
+                    amount1 = amount1.rawAdd(amountOut);
                 } else {
-                    state.delta1 = state.delta0.mul(priceX96).div(Q96);
+                    state.delta1 = state.delta0.rawMul(priceX96).rawDiv(Q96);
                     if (state.delta1 > 0) {
                         uint256 amountOut = _swap(
                             abi.encodePacked(params.token1, params.fee, params.token0),
                             state.delta1,
                             params.deadline
                         );
-                        amount0 = amount0.add(amountOut);
-                        amount1 = amount1.sub(state.delta1);
+                        amount0 = amount0.rawAdd(amountOut);
+                        amount1 = amount1.rawSub(state.delta1);
                     }
                 }
             }
@@ -210,7 +210,7 @@ abstract contract YieldSwapper is IYieldSwapper {
                 if (params.bc == RewardConversion.TOKEN_0) {
                     state.rewardAmount0 = state.totalReward0;
                 } else if (params.bc == RewardConversion.TOKEN_1) {
-                    state.rewardAmount1 = state.totalReward0.mul(priceX96).div(Q96);
+                    state.rewardAmount1 = state.totalReward0.rawMul(priceX96).rawDiv(Q96);
                 }
             }
         }
@@ -220,11 +220,11 @@ abstract contract YieldSwapper is IYieldSwapper {
             maxAddAmount1 = amount1;
         } else {
             if (params.bc == RewardConversion.NONE) {
-                maxAddAmount0 = amount0.mul(Q64).div(uint(totalRewardX64).add(Q64));
-                maxAddAmount1 = amount1.mul(Q64).div(uint(totalRewardX64).add(Q64));
+                maxAddAmount0 = amount0.rawMul(Q64).rawDiv(uint(totalRewardX64).rawAdd(Q64));
+                maxAddAmount1 = amount1.rawMul(Q64).rawDiv(uint(totalRewardX64).rawAdd(Q64));
             } else {
-                maxAddAmount0 = amount0 > state.rewardAmount0 ? amount0.sub(state.rewardAmount0) : 0;
-                maxAddAmount1 = amount1 > state.rewardAmount1 ? amount1.sub(state.rewardAmount1) : 0;
+                maxAddAmount0 = amount0 > state.rewardAmount0 ? amount0.rawSub(state.rewardAmount0) : 0;
+                maxAddAmount1 = amount1 > state.rewardAmount1 ? amount1.rawSub(state.rewardAmount1) : 0;
             }
         }
     }

@@ -4,9 +4,9 @@ pragma solidity ^0.8.0;
 import "../interfaces/IUniswapV3Immutables.sol";
 
 abstract contract UniswapV3Immutables is IUniswapV3Immutables {
-    INonfungiblePositionManager public npm;
-    IUniswapV3Factory public factory;
-    IWETH9 public weth;
+    INonfungiblePositionManager public immutable npm;
+    IUniswapV3Factory public immutable factory;
+    IWETH9 public immutable weth;
 
     constructor(INonfungiblePositionManager _nonfungiblePositionManager) {
         npm = _nonfungiblePositionManager;

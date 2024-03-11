@@ -2,10 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Multicall.sol";
-
-import "solady/src/utils/SafeTransferLib.sol";
 
 import "./base/YieldSwapper.sol";
 import "./base/UniswapV3Immutables.sol";
@@ -20,8 +17,9 @@ import "./interfaces/IAutoYield.sol";
 
 */
 contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyGuard, Multicall {
-    using SafeMath for uint256;
+    using FixedPointMathLib for uint256;
     using SafeTransferLib for address;
+
     uint64 constant public compounderRewardX64 = MAX_REWARD_X64 / 2;
 
     mapping(uint256 => RangePositionConfig) public rangePositionConfigs;
@@ -366,10 +364,10 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         ) = npm.positions(params.tokenId);
 
         state.tokenOwner = ownerOf[params.tokenId];
-        state.amount0 = state.amount0.add(
+        state.amount0 = state.amount0.rawAdd(
             accountBalances[state.tokenOwner][state.token0]
         );
-        state.amount1 = state.amount1.add(
+        state.amount1 = state.amount1.rawAdd(
             accountBalances[state.tokenOwner][state.token1]
         );
 
@@ -415,19 +413,19 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
 
             if (isNotOwner) {
                 if (params.rewardConversion == RewardConversion.NONE) {
-                    amount0Fees = compounded0.mul(totalRewardX64).div(Q64);
-                    amount1Fees = compounded1.mul(totalRewardX64).div(Q64);
+                    amount0Fees = compounded0.rawMul(totalRewardX64).rawDiv(Q64);
+                    amount1Fees = compounded1.rawMul(totalRewardX64).rawDiv(Q64);
                 } else {
-                    uint addedTotal0 = compounded0.add(compounded1.mul(Q96).div(state.priceX96));
+                    uint addedTotal0 = compounded0.rawAdd(compounded1.rawMul(Q96).rawDiv(state.priceX96));
                     if (params.rewardConversion == RewardConversion.TOKEN_0) {
-                        amount0Fees = addedTotal0.mul(totalRewardX64).div(Q64);
-                        if (amount0Fees > state.amount0.sub(compounded0)) {
-                            amount0Fees = state.amount0.sub(compounded0);
+                        amount0Fees = addedTotal0.rawMul(totalRewardX64).rawDiv(Q64);
+                        if (amount0Fees > state.amount0.rawSub(compounded0)) {
+                            amount0Fees = state.amount0.rawSub(compounded0);
                         }
                     } else {
-                        amount1Fees = addedTotal0.mul(state.priceX96).div(Q96).mul(totalRewardX64).div(Q64);
-                        if (amount1Fees > state.amount1.sub(compounded1)) {
-                            amount1Fees = state.amount1.sub(compounded1);
+                        amount1Fees = addedTotal0.rawMul(state.priceX96).rawDiv(Q96).rawMul(totalRewardX64).rawDiv(Q64);
+                        if (amount1Fees > state.amount1.rawSub(compounded1)) {
+                            amount1Fees = state.amount1.rawSub(compounded1);
                         }
                     }
                 }
@@ -436,26 +434,26 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
             _setBalance(
                 state.tokenOwner,
                 state.token0,
-                state.amount0.sub(compounded0).sub(amount0Fees)
+                state.amount0.rawSub(compounded0).rawSub(amount0Fees)
             );
             _setBalance(
                 state.tokenOwner,
                 state.token1,
-                state.amount1.sub(compounded1).sub(amount1Fees)
+                state.amount1.rawSub(compounded1).rawSub(amount1Fees)
             );
 
             if (isNotOwner) {
                 uint64 protocolRewardX64 = totalRewardX64 -
                     compounderRewardX64;
-                uint256 protocolFees0 = amount0Fees.mul(protocolRewardX64).div(
+                uint256 protocolFees0 = amount0Fees.rawMul(protocolRewardX64).rawDiv(
                     totalRewardX64
                 );
-                uint256 protocolFees1 = amount1Fees.mul(protocolRewardX64).div(
+                uint256 protocolFees1 = amount1Fees.rawMul(protocolRewardX64).rawDiv(
                     totalRewardX64
                 );
 
-                reward0 = amount0Fees.sub(protocolFees0);
-                reward1 = amount1Fees.sub(protocolFees1);
+                reward0 = amount0Fees.rawSub(protocolFees0);
+                reward1 = amount1Fees.rawSub(protocolFees1);
 
                 _increaseBalance(msg.sender, state.token0, reward0);
                 _increaseBalance(msg.sender, state.token1, reward1);
@@ -548,7 +546,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
     }
 
     function _increaseBalance(address account, address token, uint256 amount) internal {
-        accountBalances[account][token] = accountBalances[account][token].add(
+        accountBalances[account][token] = accountBalances[account][token].rawAdd(
             amount
         );
         emit BalanceAdded(account, token, amount);
@@ -563,13 +561,13 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
             emit BalanceAdded(
                 account,
                 address(token),
-                amount.sub(currentBalance)
+                amount.rawSub(currentBalance)
             );
         } else {
             emit BalanceRemoved(
                 account,
                 address(token),
-                currentBalance.sub(amount)
+                currentBalance.rawSub(amount)
             );
         }
     }
@@ -640,7 +638,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         bool unwrap
     ) internal {
         accountBalances[msg.sender][token] = accountBalances[msg.sender][token]
-            .sub(amount);
+            .rawSub(amount);
         emit BalanceRemoved(msg.sender, token, amount);
         if (address(weth) == token && unwrap) {
             weth.withdraw(amount);
