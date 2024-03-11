@@ -252,6 +252,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
 
             _addToken(state.owner, state.newTokenId);
             rangePositionConfigs[state.newTokenId] = config;
+            emit RangeChanged(params.tokenId, state.newTokenId);
             emit RangePositionConfigured(
                 state.newTokenId,
                 config.lowerTickLimit,
@@ -264,21 +265,8 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
                 config.maxRewardX64
             );
 
-
             _removeToken(state.owner, params.tokenId);
             delete rangePositionConfigs[params.tokenId];
-            emit RangePositionConfigured(
-                params.tokenId,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                false,
-                0
-            );
-            emit RangeChanged(params.tokenId, state.newTokenId);
         } else {
             revert NotReady();
         }
