@@ -32,6 +32,7 @@ abstract contract YieldSwapper is IYieldSwapper {
 
     constructor(ISwapRouter _swapRouter) {
         swapRouter = _swapRouter;
+        operator = msg.sender;
     }
 
     function _validateSwap(bool swap0For1, uint256 amountIn, IUniswapV3Pool pool, uint64 maxPriceDifferenceX64) internal view returns (uint256 amountOutMin, int24 currentTick, uint160 sqrtPriceX96, uint256 priceX96) {

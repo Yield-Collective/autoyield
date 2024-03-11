@@ -46,4 +46,8 @@ interface IYieldSwapper {
 
     /// @notice The nonfungible position manager address with which this staking contract is compatible
     function swapRouter() external view returns (ISwapRouter);
+
+    function operator() external view returns(address);
+
+    function swapRouter() external view returns(ISwapRouter);
 }
