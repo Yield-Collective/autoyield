@@ -1,45 +1,46 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
-pragma abicoder v2;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Multicall.sol";
 
+import "solady/src/utils/SafeTransferLib.sol";
+
+import "./base/YieldSwapper.sol";
+import "./base/UniswapV3Immutables.sol";
 import "./interfaces/IAutoYield.sol";
-import "./lib/YieldMath.sol";
-import "./lib/YieldSwap.sol";
 
-contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
+/*
+    ___         __    __  ___      __    __
+   /   | __  __/ /____\ \/ (_)__  / /___/ /
+  / /| |/ / / / __/ __ \  / / _ \/ / __  /
+ / ___ / /_/ / /_/ /_/ / / /  __/ / /_/ /
+/_/  |_\__,_/\__/\____/_/_/\___/_/\__,_/
+
+*/
+contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyGuard, Multicall {
     using SafeMath for uint256;
-
-    INonfungiblePositionManager public override npm;
-    ISwapRouter public override swapRouter;
-    IUniswapV3Factory public override factory;
-    IWETH9 public override weth;
-    address public operator;
+    using SafeTransferLib for address;
+    uint64 constant public compounderRewardX64 = MAX_REWARD_X64 / 2;
 
     mapping(uint256 => RangePositionConfig) public rangePositionConfigs;
-    mapping(uint256 => address) public override ownerOf;
-    mapping(address => uint256[]) public override accountTokens;
-    mapping(address => mapping(address => uint256)) public override accountBalances;
+    mapping(uint256 => address) public ownerOf;
+    mapping(address => uint256[]) public accountTokens;
+    mapping(address => mapping(address => uint256)) public accountBalances;
 
     constructor(
         INonfungiblePositionManager _nonfungiblePositionManager,
         ISwapRouter _swapRouter
-    ) {
-        npm = _nonfungiblePositionManager;
-        swapRouter = _swapRouter;
-        factory = IUniswapV3Factory(npm.factory());
-        weth = IWETH9(npm.WETH9());
-
-        operator = msg.sender;
-    }
+    )
+    UniswapV3Immutables(_nonfungiblePositionManager)
+    YieldSwapper(_swapRouter)
+    {}
 
     function withdrawBalances(
         address[] calldata tokens,
         address to
-    ) external override {
+    ) external {
         if (msg.sender != operator) {
             revert Unauthorized();
         }
@@ -47,7 +48,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
         uint i;
         uint count = tokens.length;
         for (; i < count; ++i) {
-            uint256 balance = IERC20(tokens[i]).balanceOf(address(this));
+            uint256 balance = tokens[i].balanceOf(address(this));
             if (balance > 0) {
                 _transferToken(to, tokens[i], balance, true);
             }
@@ -113,7 +114,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
             state.amount1,
             state.feeAmount0,
             state.feeAmount1
-        ) = YieldSwap.decreaseFullLiquidityAndCollect(
+        ) = _decreaseFullLiquidityAndCollect(
             npm,
             params.tokenId,
             state.liquidity,
@@ -125,10 +126,10 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
         if (config.onlyFees) {
             state.protocolReward0 =
                 (state.feeAmount0 * params.rewardX64) /
-                YieldSwap.Q64;
+                Q64;
             state.protocolReward1 =
                 (state.feeAmount1 * params.rewardX64) /
-                YieldSwap.Q64;
+                Q64;
             state.amount0 -= state.protocolReward0;
             state.amount1 -= state.protocolReward1;
         }
@@ -140,13 +141,14 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
             revert SwapAmountTooLarge();
         }
 
-        state.pool = YieldSwap.getPool(
-            address(factory),
-            state.token0,
-            state.token1,
-            state.fee
+        state.pool = IUniswapV3Pool(
+            factory.getPool(
+                state.token0,
+                state.token1,
+                state.fee
+            )
         );
-        (state.amountOutMin, state.currentTick, , ) = YieldSwap.validateSwap(
+        (state.amountOutMin, state.currentTick, , ) = _validateSwap(
             params.swap0To1,
             params.amountIn,
             state.pool,
@@ -159,7 +161,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
             state.currentTick < state.tickLower - config.lowerTickLimit ||
             state.currentTick >= state.tickUpper + config.upperTickLimit
         ) {
-            int24 tickSpacing = YieldMath.getTickSpacing(factory, state.fee);
+            int24 tickSpacing = _getTickSpacing(factory, state.fee);
             int24 baseTick = state.currentTick -
                 (((state.currentTick % tickSpacing) + tickSpacing) %
                     tickSpacing);
@@ -171,10 +173,9 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
                 revert SameRange();
             }
 
-            (state.amountInDelta, state.amountOutDelta) = YieldSwap.safeSwap(
-                address(swapRouter),
-                params.swap0To1 ? IERC20(state.token0) : IERC20(state.token1),
-                params.swap0To1 ? IERC20(state.token1) : IERC20(state.token0),
+            (state.amountInDelta, state.amountOutDelta) = _safeSwap(
+                params.swap0To1 ? state.token0 : state.token1,
+                params.swap0To1 ? state.token1 : state.token0,
                 params.amountIn,
                 state.amountOutMin,
                 params.swapData
@@ -188,12 +189,12 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
                 : state.amount1 - state.amountInDelta;
             state.maxAddAmount0 = config.onlyFees
                 ? state.amount0
-                : (state.amount0 * YieldSwap.Q64) /
-                    (params.rewardX64 + YieldSwap.Q64);
+                : (state.amount0 * Q64) /
+                    (params.rewardX64 + Q64);
             state.maxAddAmount1 = config.onlyFees
                 ? state.amount1
-                : (state.amount1 * YieldSwap.Q64) /
-                    (params.rewardX64 + YieldSwap.Q64);
+                : (state.amount1 * Q64) /
+                    (params.rewardX64 + Q64);
 
             INonfungiblePositionManager.MintParams
                 memory mintParams = INonfungiblePositionManager.MintParams(
@@ -210,22 +211,14 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
                     params.deadline
                 );
 
-            SafeERC20.safeApprove(
-                IERC20(state.token0),
-                address(npm),
-                state.maxAddAmount0
-            );
-            SafeERC20.safeApprove(
-                IERC20(state.token1),
-                address(npm),
-                state.maxAddAmount1
-            );
+            state.token0.safeApprove(address(npm), state.maxAddAmount0);
+            state.token1.safeApprove(address(npm), state.maxAddAmount1);
 
             (state.newTokenId, , state.amountAdded0, state.amountAdded1) = npm
                 .mint(mintParams);
 
-            SafeERC20.safeApprove(IERC20(state.token0), address(npm), 0);
-            SafeERC20.safeApprove(IERC20(state.token1), address(npm), 0);
+            state.token0.safeApprove(address(npm), 0);
+            state.token1.safeApprove(address(npm), 0);
 
             state.owner = npm.ownerOf(params.tokenId);
 
@@ -234,10 +227,10 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
             if (!config.onlyFees) {
                 state.protocolReward0 =
                     (state.amountAdded0 * params.rewardX64) /
-                    YieldSwap.Q64;
+                    Q64;
                 state.protocolReward1 =
                     (state.amountAdded1 * params.rewardX64) /
-                    YieldSwap.Q64;
+                    Q64;
                 state.amount0 -= state.protocolReward0;
                 state.amount1 -= state.protocolReward1;
             }
@@ -320,7 +313,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
         address from,
         uint256 tokenId,
         bytes calldata
-    ) external override nonReentrant returns (bytes4) {
+    ) external nonReentrant returns (bytes4) {
         require(msg.sender == address(npm));
 
         _addToken(tokenId, from);
@@ -330,7 +323,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
 
     function balanceOf(
         address account
-    ) external view override returns (uint256 balance) {
+    ) external view returns (uint256 balance) {
         return accountTokens[account].length;
     }
 
@@ -338,7 +331,6 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
         AutoCompoundParams memory params
     )
         external
-        override
         nonReentrant
         returns (
             uint256 reward0,
@@ -402,7 +394,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
                 state.priceX96,
                 state.maxAddAmount0,
                 state.maxAddAmount1
-            ) = YieldSwap.swapToPriceRatio(factory, swapRouter, swapParams);
+            ) = _swapToPriceRatio(factory, swapParams);
 
             if (state.maxAddAmount0 > 0 || state.maxAddAmount1 > 0) {
                 (, compounded0, compounded1) = npm.increaseLiquidity(
@@ -420,15 +412,26 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
             bool isNotOwner = state.tokenOwner != msg.sender;
             uint256 amount0Fees;
             uint256 amount1Fees;
-            (amount0Fees, amount1Fees) = YieldSwap.calculateCompoundFee(
-                params.rewardConversion,
-                state.amount0,
-                state.amount1,
-                state.priceX96,
-                compounded0,
-                compounded1,
-                isNotOwner
-            );
+
+            if (isNotOwner) {
+                if (params.rewardConversion == RewardConversion.NONE) {
+                    amount0Fees = compounded0.mul(totalRewardX64).div(Q64);
+                    amount1Fees = compounded1.mul(totalRewardX64).div(Q64);
+                } else {
+                    uint addedTotal0 = compounded0.add(compounded1.mul(Q96).div(state.priceX96));
+                    if (params.rewardConversion == RewardConversion.TOKEN_0) {
+                        amount0Fees = addedTotal0.mul(totalRewardX64).div(Q64);
+                        if (amount0Fees > state.amount0.sub(compounded0)) {
+                            amount0Fees = state.amount0.sub(compounded0);
+                        }
+                    } else {
+                        amount1Fees = addedTotal0.mul(state.priceX96).div(Q96).mul(totalRewardX64).div(Q64);
+                        if (amount1Fees > state.amount1.sub(compounded1)) {
+                            amount1Fees = state.amount1.sub(compounded1);
+                        }
+                    }
+                }
+            }
 
             _setBalance(
                 state.tokenOwner,
@@ -442,13 +445,13 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
             );
 
             if (isNotOwner) {
-                uint64 protocolRewardX64 = YieldSwap.totalRewardX64 -
-                    YieldSwap.compounderRewardX64;
+                uint64 protocolRewardX64 = totalRewardX64 -
+                    compounderRewardX64;
                 uint256 protocolFees0 = amount0Fees.mul(protocolRewardX64).div(
-                    YieldSwap.totalRewardX64
+                    totalRewardX64
                 );
                 uint256 protocolFees1 = amount1Fees.mul(protocolRewardX64).div(
-                    YieldSwap.totalRewardX64
+                    totalRewardX64
                 );
 
                 reward0 = amount0Fees.sub(protocolFees0);
@@ -477,11 +480,37 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
         );
     }
 
+    function decreaseLiquidityAndCollect(DecreaseLiquidityAndCollectParams calldata params)
+    external
+    nonReentrant
+    returns (uint256 amount0, uint256 amount1)
+    {
+        require(ownerOf[params.tokenId] == msg.sender, "!owner");
+        (amount0, amount1) = npm.decreaseLiquidity(
+            INonfungiblePositionManager.DecreaseLiquidityParams(
+                params.tokenId,
+                params.liquidity,
+                params.amount0Min,
+                params.amount1Min,
+                params.deadline
+            )
+        );
+
+        INonfungiblePositionManager.CollectParams memory collectParams =
+            INonfungiblePositionManager.CollectParams(
+                params.tokenId,
+                params.recipient,
+                YieldMath.toUint128(amount0),
+                YieldMath.toUint128(amount1)
+            );
+
+        npm.collect(collectParams);
+    }
+
     function collect(
         INonfungiblePositionManager.CollectParams calldata params
     )
         external
-        override
         nonReentrant
         returns (uint256 amount0, uint256 amount1)
     {
@@ -494,7 +523,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
         address to,
         bool withdrawBalances_,
         bytes memory data
-    ) external override nonReentrant {
+    ) external nonReentrant {
         require(to != address(this));
         require(ownerOf[tokenId] == msg.sender);
 
@@ -513,7 +542,7 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
         address token,
         address to,
         uint256 amount
-    ) external override nonReentrant {
+    ) external nonReentrant {
         require(amount > 0);
         _transferToken(to, token, amount, false);
     }
@@ -568,14 +597,17 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
             tokenId
         );
 
-        IERC20 tokenA = IERC20(token0);
-        IERC20 tokenB = IERC20(token1);
+        uint256 allowance0 = IERC20(token0).allowance(address(this), address(npm));
+        uint256 allowance1 = IERC20(token1).allowance(address(this), address(npm));
 
-        SafeERC20.forceApprove(tokenA, address(npm), type(uint256).max);
-        SafeERC20.forceApprove(tokenB, address(npm), type(uint256).max);
-        SafeERC20.forceApprove(tokenA, address(swapRouter), type(uint256).max);
-        SafeERC20.forceApprove(tokenB, address(swapRouter), type(uint256).max);
-
+        if (allowance0 == 0) {
+            token0.safeApprove(address(npm), type(uint256).max);
+            token1.safeApprove(address(swapRouter), type(uint256).max);
+        }
+        if (allowance1 == 0) {
+            token0.safeApprove(address(npm), type(uint256).max);
+            token1.safeApprove(address(swapRouter), type(uint256).max);
+        }
         accountTokens[account].push(tokenId);
         ownerOf[tokenId] = account;
     }
@@ -619,8 +651,24 @@ contract AutoYield is IAutoYield, ReentrancyGuard, Multicall {
                 emit BalanceWithdrawn(msg.sender, token, to, amount);
             }
         } else {
-            SafeERC20.safeTransfer(IERC20(token), to, amount);
+            token.safeTransfer(to, amount);
             emit BalanceWithdrawn(msg.sender, token, to, amount);
+        }
+    }
+
+    function _getTickSpacing(IUniswapV3Factory factory, uint24 fee) internal view returns (int24) {
+        if (fee == 10000) {
+            return 200;
+        } else if (fee == 3000) {
+            return 60;
+        } else if (fee == 500) {
+            return 10;
+        } else {
+            int24 spacing = factory.feeAmountTickSpacing(fee);
+            if (spacing <= 0) {
+                revert NotSupportedFeeTier();
+            }
+            return spacing;
         }
     }
 

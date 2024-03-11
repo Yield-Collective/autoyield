@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 pragma abicoder v2;
 
+import "./interfaces/IYieldSwapper.sol";
 import "./interfaces/IAutoYield.sol";
 import "./interfaces/IMultiYield.sol";
 
@@ -16,7 +17,7 @@ contract MultiYield is IMultiYield {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
-           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IAutoYield.RewardConversion.TOKEN_0, false, true));
+           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IYieldSwapper.RewardConversion.TOKEN_0, false, true));
         }
     }
     
@@ -24,7 +25,7 @@ contract MultiYield is IMultiYield {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
-           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IAutoYield.RewardConversion.TOKEN_1, false, true));
+           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IYieldSwapper.RewardConversion.TOKEN_1, false, true));
         }
     }
 
@@ -32,7 +33,7 @@ contract MultiYield is IMultiYield {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
-           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IAutoYield.RewardConversion.TOKEN_0, false, false));
+           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IYieldSwapper.RewardConversion.TOKEN_0, false, false));
         }
     }
     
@@ -40,7 +41,7 @@ contract MultiYield is IMultiYield {
         uint256 count = tokenIds.length;
         uint256 i;
         for (; i < count; i++) {
-           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IAutoYield.RewardConversion.TOKEN_1, false, false));
+           compoundor.autoCompound(IAutoYield.AutoCompoundParams(tokenIds[i], IYieldSwapper.RewardConversion.TOKEN_1, false, false));
         }
     }
 }

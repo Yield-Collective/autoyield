@@ -3,22 +3,13 @@ pragma solidity ^0.8.0;
 pragma abicoder v2;
 
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
-import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
-
-import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/INonfungiblePositionManager.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/external/IWETH9.sol";
+import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 
-/*                                                  __          
-  _________  ____ ___  ____  ____  __  ______  ____/ /___  _____
- / ___/ __ \/ __ `__ \/ __ \/ __ \/ / / / __ \/ __  / __ \/ ___/
-/ /__/ /_/ / / / / / / /_/ / /_/ / /_/ / / / / /_/ / /_/ / /    
-\___/\____/_/ /_/ /_/ .___/\____/\__,_/_/ /_/\__,_/\____/_/     
-                   /_/
-*/  
-interface IAutoYield is IERC721Receiver {
+import "./IYieldSwapper.sol";
+import "./IUniswapV3Immutables.sol";
+
+interface IAutoYield is IERC721Receiver, IYieldSwapper, IUniswapV3Immutables {
     // token movements
     event TokenDeposited(address account, uint256 tokenId);
     event TokenWithdrawn(address account, address to, uint256 tokenId);
@@ -59,9 +50,6 @@ interface IAutoYield is IERC721Receiver {
     error SameRange();
     error NotReady();
     error Unauthorized();
-    error TWAPCheckFailed();
-    error SwapFailed();
-    error SlippageError();
     error EtherSendFailed();
     error NotWETH();
     error NotConfigured();
@@ -69,9 +57,7 @@ interface IAutoYield is IERC721Receiver {
     error LiquidityChanged();
     error SwapAmountTooLarge();
     error InvalidConfig();
-
-    /// @notice how reward should be converted
-    enum RewardConversion { NONE, TOKEN_0, TOKEN_1 }
+    error NotSupportedFeeTier();
 
     // defines when and how a position can be changed by operator
     // when a position is adjusted config for the position is cleared and copied to the newly created position
@@ -87,7 +73,7 @@ interface IAutoYield is IERC721Receiver {
         uint64 maxRewardX64; // max allowed reward percentage of fees or full position
     }
 
-    /// @notice params for reBalance()
+/// @notice params for reBalance()
     struct RangeExecuteParams {
         uint256 tokenId;
         bool swap0To1;
@@ -133,40 +119,7 @@ interface IAutoYield is IERC721Receiver {
         uint256 newTokenId;
     }
 
-    // state used during swap execution
-    struct SwapState {
-        uint256 rewardAmount0;
-        uint256 rewardAmount1;
-        uint256 positionAmount0;
-        uint256 positionAmount1;
-        int24 tick;
-        int24 otherTick;
-        uint160 sqrtPriceX96;
-        uint160 sqrtPriceX96Lower;
-        uint160 sqrtPriceX96Upper;
-        uint256 amountRatioX96;
-        uint256 delta0;
-        uint256 delta1;
-        bool sell0;
-        bool twapOk;
-        uint256 totalReward0;
-    }
-
-    struct SwapParams {
-        address token0;
-        address token1;
-        uint24 fee;
-        int24 tickLower;
-        int24 tickUpper;
-        uint256 amount0;
-        uint256 amount1;
-        uint256 deadline;
-        RewardConversion bc;
-        bool isOwner;
-        bool doSwap;
-    }
-
-    // state used during autocompound execution
+// state used during autocompound execution
     struct AutoCompoundState {
         uint256 amount0;
         uint256 amount1;
@@ -198,17 +151,14 @@ interface IAutoYield is IERC721Receiver {
         bool doSwap;
     }
 
-    /// @notice The weth address
-    function weth() external view returns (IWETH9);
-
-    /// @notice The factory address with which this staking contract is compatible
-    function factory() external view returns (IUniswapV3Factory);
-
-    /// @notice The nonfungible position manager address with which this staking contract is compatible
-    function npm() external view returns (INonfungiblePositionManager);
-
-    /// @notice The nonfungible position manager address with which this staking contract is compatible
-    function swapRouter() external view returns (ISwapRouter);
+    struct DecreaseLiquidityAndCollectParams {
+        uint256 tokenId;
+        uint128 liquidity;
+        uint256 amount0Min;
+        uint256 amount1Min;
+        uint256 deadline;
+        address recipient;
+    }
 
     /// @notice Owner of a managed NFT
     function ownerOf(uint256 tokenId) external view returns (address owner);
@@ -270,14 +220,7 @@ interface IAutoYield is IERC721Receiver {
      */
     function autoCompound(AutoCompoundParams calldata params) external returns (uint256 reward0, uint256 reward1, uint256 compounded0, uint256 compounded1);
 
-//    struct DecreaseLiquidityAndCollectParams {
-//        uint256 tokenId;
-//        uint128 liquidity;
-//        uint256 amount0Min;
-//        uint256 amount1Min;
-//        uint256 deadline;
-//        address recipient;
-//    }
+    function reBalance(RangeExecuteParams calldata params) external;
 
     /**
      * @notice Special method to decrease liquidity and collect decreased amount - can only be called by the NFT owner
@@ -286,10 +229,9 @@ interface IAutoYield is IERC721Receiver {
      * @return amount0 amount of token0 removed and collected
      * @return amount1 amount of token1 removed and collected
      */
-//    function decreaseLiquidityAndCollect(DecreaseLiquidityAndCollectParams calldata params)
-//        external
-//        returns (uint256 amount0, uint256 amount1);
-
+    function decreaseLiquidityAndCollect(DecreaseLiquidityAndCollectParams calldata params)
+    external
+    returns (uint256 amount0, uint256 amount1);
     /**
      * @notice Forwards collect call to NonfungiblePositionManager - can only be called by the NFT owner
      * @param params INonfungiblePositionManager.CollectParams which are forwarded to the Uniswap V3 NonfungiblePositionManager

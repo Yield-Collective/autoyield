@@ -3,9 +3,10 @@ pragma solidity ^0.8.0;
 pragma abicoder v2;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+
+import "solady/src/utils/SafeTransferLib.sol";
 
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
@@ -24,6 +25,7 @@ import "@uniswap/swap-router-contracts/contracts/interfaces/IV3SwapRouter.sol";
  */
 contract SelfYield is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
+    using SafeTransferLib for address;
 
     uint128 constant Q64 = 2**64;
     uint128 constant Q96 = 2**96;
@@ -74,9 +76,9 @@ contract SelfYield is Ownable, ReentrancyGuard {
         uint count = tokens.length;
         uint i;
         for(;i<count;++i) {
-            IERC20 token = IERC20(tokens[i]);
+            address token = tokens[i];
             uint256 balance = token.balanceOf(address(this));
-            SafeERC20.safeTransfer(token, to, balance);
+            token.safeTransfer(to, balance);
         }
     }
 
@@ -166,10 +168,10 @@ contract SelfYield is Ownable, ReentrancyGuard {
             if (state.maxAddAmount0 > 0 || state.maxAddAmount1 > 0) {
                 
                 if (state.maxAddAmount0 > 0) {
-                    SafeERC20.safeApprove(IERC20(state.token0), address(nonfungiblePositionManager), state.maxAddAmount0);
+                    state.token0.safeApprove(address(nonfungiblePositionManager), state.maxAddAmount0);
                 }
                 if (state.maxAddAmount1 > 0) {
-                    SafeERC20.safeApprove(IERC20(state.token1), address(nonfungiblePositionManager), state.maxAddAmount1);
+                    state.token1.safeApprove(address(nonfungiblePositionManager), state.maxAddAmount1);
                 }                
 
                 (, state.compounded0, state.compounded1) = nonfungiblePositionManager.increaseLiquidity(
@@ -184,10 +186,10 @@ contract SelfYield is Ownable, ReentrancyGuard {
                 );
 
                 if (state.maxAddAmount0 > 0) {
-                    SafeERC20.safeApprove(IERC20(state.token0), address(nonfungiblePositionManager), 0);
+                    state.token0.safeApprove(address(nonfungiblePositionManager), 0);
                 }
                 if (state.maxAddAmount1 > 0) {
-                    SafeERC20.safeApprove(IERC20(state.token1), address(nonfungiblePositionManager), 0);
+                    state.token1.safeApprove(address(nonfungiblePositionManager), 0);
                 }
 
                 // fees are always calculated based on added amount
@@ -197,10 +199,10 @@ contract SelfYield is Ownable, ReentrancyGuard {
 
             // return remaining tokens to owner
             if (state.amount0.sub(state.compounded0).sub(state.amount0Fees) > 0) {
-                SafeERC20.safeTransfer(IERC20(state.token0), from, state.amount0.sub(state.compounded0).sub(state.amount0Fees));
+                state.token0.safeTransfer(from, state.amount0.sub(state.compounded0).sub(state.amount0Fees));
             }
             if (state.amount1.sub(state.compounded1).sub(state.amount1Fees) > 0) {
-                SafeERC20.safeTransfer(IERC20(state.token1), from, state.amount1.sub(state.compounded1).sub(state.amount1Fees));
+                state.token1.safeTransfer(from, state.amount1.sub(state.compounded1).sub(state.amount1Fees));
             }
             
             // protocol reward is kept in contract (leftover tokens)
@@ -305,9 +307,9 @@ contract SelfYield is Ownable, ReentrancyGuard {
 
         if (state.delta0 > 0) {
             if (state.sell0) {
-                SafeERC20.safeApprove(IERC20(params.token0), address(swapRouter), state.delta0);
+                params.token0.safeApprove(address(swapRouter), state.delta0);
                 uint256 amountOut = _swap(abi.encodePacked(params.token0, params.fee, params.token1), state.delta0);
-                SafeERC20.safeApprove(IERC20(params.token0), address(swapRouter), 0);
+                params.token0.safeApprove(address(swapRouter), 0);
 
                 amount0 = amount0.sub(state.delta0);
                 amount1 = amount1.add(amountOut);
@@ -315,9 +317,9 @@ contract SelfYield is Ownable, ReentrancyGuard {
                 state.delta1 = state.delta0.mul(state.priceX96).div(Q96);
                 // prevent possible rounding to 0 issue
                 if (state.delta1 > 0) {
-                    SafeERC20.safeApprove(IERC20(params.token1), address(swapRouter), state.delta1);
+                    params.token1.safeApprove(address(swapRouter), state.delta1);
                     uint256 amountOut = _swap(abi.encodePacked(params.token1, params.fee, params.token0), state.delta1);
-                    SafeERC20.safeApprove(IERC20(params.token1), address(swapRouter), 0);
+                    params.token1.safeApprove(address(swapRouter), 0);
 
                     amount0 = amount0.add(amountOut);
                     amount1 = amount1.sub(state.delta1);
