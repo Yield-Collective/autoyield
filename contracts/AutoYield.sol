@@ -250,6 +250,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
                 );
             }
 
+            _addToken(state.owner, state.newTokenId);
             rangePositionConfigs[state.newTokenId] = config;
             emit RangePositionConfigured(
                 state.newTokenId,
@@ -263,6 +264,8 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
                 config.maxRewardX64
             );
 
+
+            _removeToken(state.owner, params.tokenId);
             delete rangePositionConfigs[params.tokenId];
             emit RangePositionConfigured(
                 params.tokenId,
@@ -314,7 +317,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
     ) external nonReentrant returns (bytes4) {
         require(msg.sender == address(npm));
 
-        _addToken(tokenId, from);
+        _addToken(from, tokenId);
         emit TokenDeposited(from, tokenId);
         return this.onERC721Received.selector;
     }
@@ -588,7 +591,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         }
     }
 
-    function _addToken(uint256 tokenId, address account) internal {
+    function _addToken(address account, uint256 tokenId) internal {
         require(accountTokens[account].length < 100);
 
         (, , address token0, address token1, , , , , , , , ) = npm.positions(
