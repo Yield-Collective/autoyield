@@ -44,7 +44,7 @@ interface IYieldSwapper {
         uint256 totalReward0;
     }
 
-    /// @notice The nonfungible position manager address with which this staking contract is compatible
+    // TODO: Dynamic swap router
     function swapRouter() external view returns (ISwapRouter);
 
     function operator() external view returns(address);
