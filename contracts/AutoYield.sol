@@ -35,36 +35,157 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
     YieldSwapper(_swapRouter)
     {}
 
-    function withdrawBalances(
-        address[] calldata tokens,
-        address to
-    ) external {
-        if (msg.sender != operator) {
-            revert Unauthorized();
-        }
+    function autoCompound(
+        AutoCompoundParams memory params
+    )
+    external
+    nonReentrant
+    returns (
+        uint256 reward0,
+        uint256 reward1,
+        uint256 compounded0,
+        uint256 compounded1
+    )
+    {
+        require(ownerOf[params.tokenId] != address(0));
 
-        uint i;
-        uint count = tokens.length;
-        for (; i < count; ++i) {
-            uint256 balance = tokens[i].balanceOf(address(this));
-            if (balance > 0) {
-                _transferToken(to, tokens[i], balance, true);
+        AutoCompoundState memory state;
+        (state.amount0, state.amount1) = npm.collect(
+            INonfungiblePositionManager.CollectParams(
+                params.tokenId,
+                address(this),
+                type(uint128).max,
+                type(uint128).max
+            )
+        );
+        (
+        ,
+        ,
+            state.token0,
+            state.token1,
+            state.fee,
+            state.tickLower,
+            state.tickUpper,
+        ,
+        ,
+        ,
+        ,
+
+        ) = npm.positions(params.tokenId);
+
+        state.tokenOwner = ownerOf[params.tokenId];
+        state.amount0 = state.amount0.rawAdd(
+            accountBalances[state.tokenOwner][state.token0]
+        );
+        state.amount1 = state.amount1.rawAdd(
+            accountBalances[state.tokenOwner][state.token1]
+        );
+
+        if (state.amount0 > 0 || state.amount1 > 0) {
+            SwapParams memory swapParams = SwapParams(
+                state.token0,
+                state.token1,
+                state.fee,
+                state.tickLower,
+                state.tickUpper,
+                state.amount0,
+                state.amount1,
+                block.timestamp,
+                params.rewardConversion,
+                state.tokenOwner == msg.sender,
+                params.doSwap
+            );
+
+            (
+                state.amount0,
+                state.amount1,
+                state.priceX96,
+                state.maxAddAmount0,
+                state.maxAddAmount1
+            ) = _swapToPriceRatio(factory, swapParams);
+
+            if (state.maxAddAmount0 > 0 || state.maxAddAmount1 > 0) {
+                (, compounded0, compounded1) = npm.increaseLiquidity(
+                    INonfungiblePositionManager.IncreaseLiquidityParams(
+                        params.tokenId,
+                        state.maxAddAmount0,
+                        state.maxAddAmount1,
+                        0,
+                        0,
+                        block.timestamp
+                    )
+                );
+            }
+
+            bool isNotOwner = state.tokenOwner != msg.sender;
+            uint256 amount0Fees;
+            uint256 amount1Fees;
+
+            if (isNotOwner) {
+                if (params.rewardConversion == RewardConversion.NONE) {
+                    amount0Fees = compounded0.rawMul(totalRewardX64).rawDiv(Q64);
+                    amount1Fees = compounded1.rawMul(totalRewardX64).rawDiv(Q64);
+                } else {
+                    uint addedTotal0 = compounded0.rawAdd(compounded1.rawMul(Q96).rawDiv(state.priceX96));
+                    if (params.rewardConversion == RewardConversion.TOKEN_0) {
+                        amount0Fees = addedTotal0.rawMul(totalRewardX64).rawDiv(Q64);
+                        if (amount0Fees > state.amount0.rawSub(compounded0)) {
+                            amount0Fees = state.amount0.rawSub(compounded0);
+                        }
+                    } else {
+                        amount1Fees = addedTotal0.rawMul(state.priceX96).rawDiv(Q96).rawMul(totalRewardX64).rawDiv(Q64);
+                        if (amount1Fees > state.amount1.rawSub(compounded1)) {
+                            amount1Fees = state.amount1.rawSub(compounded1);
+                        }
+                    }
+                }
+            }
+
+            _setBalance(
+                state.tokenOwner,
+                state.token0,
+                state.amount0.rawSub(compounded0).rawSub(amount0Fees)
+            );
+            _setBalance(
+                state.tokenOwner,
+                state.token1,
+                state.amount1.rawSub(compounded1).rawSub(amount1Fees)
+            );
+
+            if (isNotOwner) {
+                uint64 protocolRewardX64 = totalRewardX64 -
+                            compounderRewardX64;
+                uint256 protocolFees0 = amount0Fees.rawMul(protocolRewardX64).rawDiv(
+                    totalRewardX64
+                );
+                uint256 protocolFees1 = amount1Fees.rawMul(protocolRewardX64).rawDiv(
+                    totalRewardX64
+                );
+
+                reward0 = amount0Fees.rawSub(protocolFees0);
+                reward1 = amount1Fees.rawSub(protocolFees1);
+
+                _increaseBalance(msg.sender, state.token0, reward0);
+                _increaseBalance(msg.sender, state.token1, reward1);
+                _increaseBalance(operator, state.token0, protocolFees0);
+                _increaseBalance(operator, state.token1, protocolFees1);
             }
         }
-    }
 
-    function withdrawETH(address to) external {
-        if (msg.sender != operator) {
-            revert Unauthorized();
+        if (params.withdrawReward) {
+            _withdrawFullBalances(state.token0, state.token1, msg.sender);
         }
 
-        uint256 balance = address(this).balance;
-        if (balance > 0) {
-            (bool sent, ) = to.call{value: balance}("");
-            if (!sent) {
-                revert EtherSendFailed();
-            }
-        }
+        emit AutoCompounded(
+            msg.sender,
+            params.tokenId,
+            compounded0,
+            compounded1,
+            reward0,
+            reward1,
+            state.token0,
+            state.token1
+        );
     }
 
     function autoRange(RangeExecuteParams calldata params) external {
@@ -74,8 +195,8 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
 
         RangeExecuteState memory state;
         RangePositionConfig memory config = rangePositionConfigs[
-            params.tokenId
-        ];
+                        params.tokenId
+            ];
 
         if (config.lowerTickDelta == config.upperTickDelta) {
             revert NotConfigured();
@@ -89,17 +210,17 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         }
 
         (
-            ,
-            ,
+        ,
+        ,
             state.token0,
             state.token1,
             state.fee,
             state.tickLower,
             state.tickUpper,
             state.liquidity,
-            ,
-            ,
-            ,
+        ,
+        ,
+        ,
 
         ) = npm.positions(params.tokenId);
 
@@ -188,32 +309,32 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
             state.maxAddAmount0 = config.onlyFees
                 ? state.amount0
                 : (state.amount0 * Q64) /
-                    (params.rewardX64 + Q64);
+                (params.rewardX64 + Q64);
             state.maxAddAmount1 = config.onlyFees
                 ? state.amount1
                 : (state.amount1 * Q64) /
-                    (params.rewardX64 + Q64);
+                (params.rewardX64 + Q64);
 
             INonfungiblePositionManager.MintParams
-                memory mintParams = INonfungiblePositionManager.MintParams(
-                    address(state.token0),
-                    address(state.token1),
-                    state.fee,
-                    int24(baseTick + config.lowerTickDelta),
-                    int24(baseTick + config.upperTickDelta),
-                    state.maxAddAmount0,
-                    state.maxAddAmount1,
-                    0,
-                    0,
-                    address(this),
-                    params.deadline
-                );
+            memory mintParams = INonfungiblePositionManager.MintParams(
+                address(state.token0),
+                address(state.token1),
+                state.fee,
+                int24(baseTick + config.lowerTickDelta),
+                int24(baseTick + config.upperTickDelta),
+                state.maxAddAmount0,
+                state.maxAddAmount1,
+                0,
+                0,
+                address(this),
+                params.deadline
+            );
 
             state.token0.safeApprove(address(npm), state.maxAddAmount0);
             state.token1.safeApprove(address(npm), state.maxAddAmount1);
 
             (state.newTokenId, , state.amountAdded0, state.amountAdded1) = npm
-                .mint(mintParams);
+            .mint(mintParams);
 
             state.token0.safeApprove(address(npm), 0);
             state.token1.safeApprove(address(npm), 0);
@@ -297,216 +418,6 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         );
     }
 
-    function onERC721Received(
-        address,
-        address from,
-        uint256 tokenId,
-        bytes calldata
-    ) external nonReentrant returns (bytes4) {
-        require(msg.sender == address(npm));
-
-        _addToken(from, tokenId);
-        emit TokenDeposited(from, tokenId);
-        return this.onERC721Received.selector;
-    }
-
-    function balanceOf(
-        address account
-    ) external view returns (uint256 balance) {
-        return accountTokens[account].length;
-    }
-
-    function autoCompound(
-        AutoCompoundParams memory params
-    )
-        external
-        nonReentrant
-        returns (
-            uint256 reward0,
-            uint256 reward1,
-            uint256 compounded0,
-            uint256 compounded1
-        )
-    {
-        require(ownerOf[params.tokenId] != address(0));
-
-        AutoCompoundState memory state;
-        (state.amount0, state.amount1) = npm.collect(
-            INonfungiblePositionManager.CollectParams(
-                params.tokenId,
-                address(this),
-                type(uint128).max,
-                type(uint128).max
-            )
-        );
-        (
-            ,
-            ,
-            state.token0,
-            state.token1,
-            state.fee,
-            state.tickLower,
-            state.tickUpper,
-            ,
-            ,
-            ,
-            ,
-
-        ) = npm.positions(params.tokenId);
-
-        state.tokenOwner = ownerOf[params.tokenId];
-        state.amount0 = state.amount0.rawAdd(
-            accountBalances[state.tokenOwner][state.token0]
-        );
-        state.amount1 = state.amount1.rawAdd(
-            accountBalances[state.tokenOwner][state.token1]
-        );
-
-        if (state.amount0 > 0 || state.amount1 > 0) {
-            SwapParams memory swapParams = SwapParams(
-                state.token0,
-                state.token1,
-                state.fee,
-                state.tickLower,
-                state.tickUpper,
-                state.amount0,
-                state.amount1,
-                block.timestamp,
-                params.rewardConversion,
-                state.tokenOwner == msg.sender,
-                params.doSwap
-            );
-
-            (
-                state.amount0,
-                state.amount1,
-                state.priceX96,
-                state.maxAddAmount0,
-                state.maxAddAmount1
-            ) = _swapToPriceRatio(factory, swapParams);
-
-            if (state.maxAddAmount0 > 0 || state.maxAddAmount1 > 0) {
-                (, compounded0, compounded1) = npm.increaseLiquidity(
-                    INonfungiblePositionManager.IncreaseLiquidityParams(
-                        params.tokenId,
-                        state.maxAddAmount0,
-                        state.maxAddAmount1,
-                        0,
-                        0,
-                        block.timestamp
-                    )
-                );
-            }
-
-            bool isNotOwner = state.tokenOwner != msg.sender;
-            uint256 amount0Fees;
-            uint256 amount1Fees;
-
-            if (isNotOwner) {
-                if (params.rewardConversion == RewardConversion.NONE) {
-                    amount0Fees = compounded0.rawMul(totalRewardX64).rawDiv(Q64);
-                    amount1Fees = compounded1.rawMul(totalRewardX64).rawDiv(Q64);
-                } else {
-                    uint addedTotal0 = compounded0.rawAdd(compounded1.rawMul(Q96).rawDiv(state.priceX96));
-                    if (params.rewardConversion == RewardConversion.TOKEN_0) {
-                        amount0Fees = addedTotal0.rawMul(totalRewardX64).rawDiv(Q64);
-                        if (amount0Fees > state.amount0.rawSub(compounded0)) {
-                            amount0Fees = state.amount0.rawSub(compounded0);
-                        }
-                    } else {
-                        amount1Fees = addedTotal0.rawMul(state.priceX96).rawDiv(Q96).rawMul(totalRewardX64).rawDiv(Q64);
-                        if (amount1Fees > state.amount1.rawSub(compounded1)) {
-                            amount1Fees = state.amount1.rawSub(compounded1);
-                        }
-                    }
-                }
-            }
-
-            _setBalance(
-                state.tokenOwner,
-                state.token0,
-                state.amount0.rawSub(compounded0).rawSub(amount0Fees)
-            );
-            _setBalance(
-                state.tokenOwner,
-                state.token1,
-                state.amount1.rawSub(compounded1).rawSub(amount1Fees)
-            );
-
-            if (isNotOwner) {
-                uint64 protocolRewardX64 = totalRewardX64 -
-                    compounderRewardX64;
-                uint256 protocolFees0 = amount0Fees.rawMul(protocolRewardX64).rawDiv(
-                    totalRewardX64
-                );
-                uint256 protocolFees1 = amount1Fees.rawMul(protocolRewardX64).rawDiv(
-                    totalRewardX64
-                );
-
-                reward0 = amount0Fees.rawSub(protocolFees0);
-                reward1 = amount1Fees.rawSub(protocolFees1);
-
-                _increaseBalance(msg.sender, state.token0, reward0);
-                _increaseBalance(msg.sender, state.token1, reward1);
-                _increaseBalance(operator, state.token0, protocolFees0);
-                _increaseBalance(operator, state.token1, protocolFees1);
-            }
-        }
-
-        if (params.withdrawReward) {
-            _withdrawFullBalances(state.token0, state.token1, msg.sender);
-        }
-
-        emit AutoCompounded(
-            msg.sender,
-            params.tokenId,
-            compounded0,
-            compounded1,
-            reward0,
-            reward1,
-            state.token0,
-            state.token1
-        );
-    }
-
-    function decreaseLiquidityAndCollect(DecreaseLiquidityAndCollectParams calldata params)
-    external
-    nonReentrant
-    returns (uint256 amount0, uint256 amount1)
-    {
-        require(ownerOf[params.tokenId] == msg.sender, "!owner");
-        (amount0, amount1) = npm.decreaseLiquidity(
-            INonfungiblePositionManager.DecreaseLiquidityParams(
-                params.tokenId,
-                params.liquidity,
-                params.amount0Min,
-                params.amount1Min,
-                params.deadline
-            )
-        );
-
-        INonfungiblePositionManager.CollectParams memory collectParams =
-            INonfungiblePositionManager.CollectParams(
-                params.tokenId,
-                params.recipient,
-                YieldMath.toUint128(amount0),
-                YieldMath.toUint128(amount1)
-            );
-
-        npm.collect(collectParams);
-    }
-
-    function collect(
-        INonfungiblePositionManager.CollectParams calldata params
-    )
-        external
-        nonReentrant
-        returns (uint256 amount0, uint256 amount1)
-    {
-        require(ownerOf[params.tokenId] == msg.sender);
-        return npm.collect(params);
-    }
-
     function withdrawToken(
         uint256 tokenId,
         address to,
@@ -534,6 +445,94 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
     ) external nonReentrant {
         require(amount > 0);
         _transferToken(to, token, amount, false);
+    }
+
+    function withdrawBalances(
+        address[] calldata tokens,
+        address to
+    ) external {
+        if (msg.sender != operator) {
+            revert Unauthorized();
+        }
+
+        uint i;
+        uint count = tokens.length;
+        for (; i < count; ++i) {
+            uint256 balance = tokens[i].balanceOf(address(this));
+            if (balance > 0) {
+                _transferToken(to, tokens[i], balance, true);
+            }
+        }
+    }
+
+    function withdrawETH(address to) external {
+        if (msg.sender != operator) {
+            revert Unauthorized();
+        }
+
+        uint256 balance = address(this).balance;
+        if (balance > 0) {
+            (bool sent, ) = to.call{value: balance}("");
+            if (!sent) {
+                revert EtherSendFailed();
+            }
+        }
+    }
+
+    function decreaseLiquidityAndCollect(DecreaseLiquidityAndCollectParams calldata params)
+    external
+    nonReentrant
+    returns (uint256 amount0, uint256 amount1)
+    {
+        require(ownerOf[params.tokenId] == msg.sender, "!owner");
+        (amount0, amount1) = npm.decreaseLiquidity(
+            INonfungiblePositionManager.DecreaseLiquidityParams(
+                params.tokenId,
+                params.liquidity,
+                params.amount0Min,
+                params.amount1Min,
+                params.deadline
+            )
+        );
+
+        npm.collect(
+            INonfungiblePositionManager.CollectParams(
+                params.tokenId,
+                params.recipient,
+                YieldMath.toUint128(amount0),
+                YieldMath.toUint128(amount1)
+            )
+        );
+    }
+
+    function collect(
+        INonfungiblePositionManager.CollectParams calldata params
+    )
+    external
+    nonReentrant
+    returns (uint256 amount0, uint256 amount1)
+    {
+        require(ownerOf[params.tokenId] == msg.sender);
+        return npm.collect(params);
+    }
+
+    function onERC721Received(
+        address,
+        address from,
+        uint256 tokenId,
+        bytes calldata
+    ) external nonReentrant returns (bytes4) {
+        require(msg.sender == address(npm));
+
+        _addToken(from, tokenId);
+        emit TokenDeposited(from, tokenId);
+        return this.onERC721Received.selector;
+    }
+
+    function balanceOf(
+        address account
+    ) external view returns (uint256 balance) {
+        return accountTokens[account].length;
     }
 
     function _increaseBalance(address account, address token, uint256 amount) internal {
