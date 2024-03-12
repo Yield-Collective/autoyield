@@ -220,7 +220,7 @@ interface IAutoYield is IERC721Receiver, IYieldSwapper, IUniswapV3Immutables {
      */
     function autoCompound(AutoCompoundParams calldata params) external returns (uint256 reward0, uint256 reward1, uint256 compounded0, uint256 compounded1);
 
-    function autoRange(RangeExecuteParams calldata params) external;
+    function autoRange(address swapRouter_, RangeExecuteParams calldata params) external;
 
     /**
      * @notice Special method to decrease liquidity and collect decreased amount - can only be called by the NFT owner

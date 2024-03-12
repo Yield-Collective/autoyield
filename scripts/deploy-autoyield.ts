@@ -28,7 +28,7 @@ export default async function main() {
   const deployedAddress = await contract.getAddress()
   console.log("Deployed at", deployedAddress)
   console.log("Verifying contract", deployedAddress)
-  await contract.deploymentTransaction()?.wait(6)
+  await contract.deploymentTransaction()?.wait(30)
   await hre.run("verify:verify", {
     address: deployedAddress,
     constructorArguments

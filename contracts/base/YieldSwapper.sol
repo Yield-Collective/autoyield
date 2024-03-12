@@ -238,7 +238,7 @@ abstract contract YieldSwapper is IYieldSwapper {
         }
     }
 
-    function _safeSwap(address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, bytes memory swapData) internal returns (uint256 amountInDelta, uint256 amountOutDelta) {
+    function _safeSwap(address swapRouter_, address tokenIn, address tokenOut, uint256 amountIn, uint256 amountOutMin, bytes memory swapData) internal returns (uint256 amountInDelta, uint256 amountOutDelta) {
         if (amountIn > 0 && swapData.length > 0) {
             uint256 balanceInBefore = tokenIn.balanceOf(address(this));
             uint256 balanceOutBefore = tokenOut.balanceOf(address(this));
@@ -247,7 +247,7 @@ abstract contract YieldSwapper is IYieldSwapper {
 
             tokenIn.safeApprove(allowanceTarget, amountIn);
 
-            (bool success,) = address(swapRouter).call(data);
+            (bool success,) = address(swapRouter_).call(data);
             if (!success) {
                 revert SwapFailed();
             }

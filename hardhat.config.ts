@@ -43,6 +43,10 @@ export default {
       goerli: process.env.ETHERSCAN_API_KEY_MAINNET,
     },
   },
+  sourcify: {
+    // Doesn't need an API key
+    enabled: true
+  },
   networks: {
     hardhat: {
       forking: {

@@ -188,7 +188,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         );
     }
 
-    function autoRange(RangeExecuteParams calldata params) external {
+    function autoRange(address swapRouter_, RangeExecuteParams calldata params) external {
         if (msg.sender != operator) {
             revert Unauthorized();
         }
@@ -290,6 +290,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
             }
 
             (state.amountInDelta, state.amountOutDelta) = _safeSwap(
+                swapRouter_,
                 params.swap0To1 ? state.token0 : state.token1,
                 params.swap0To1 ? state.token1 : state.token0,
                 params.amountIn,
