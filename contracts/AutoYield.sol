@@ -194,9 +194,7 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         }
 
         RangeExecuteState memory state;
-        RangePositionConfig memory config = rangePositionConfigs[
-                        params.tokenId
-            ];
+        RangePositionConfig memory config = rangePositionConfigs[params.tokenId];
 
         if (config.lowerTickDelta == config.upperTickDelta) {
             revert NotConfigured();
@@ -221,7 +219,6 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
         ,
         ,
         ,
-
         ) = npm.positions(params.tokenId);
 
         if (state.liquidity != params.liquidity) {
@@ -590,10 +587,10 @@ contract AutoYield is IAutoYield, YieldSwapper, UniswapV3Immutables, ReentrancyG
 
         if (allowance0 == 0) {
             token0.safeApprove(address(npm), type(uint256).max);
-            token1.safeApprove(address(swapRouter), type(uint256).max);
+            token0.safeApprove(address(swapRouter), type(uint256).max);
         }
         if (allowance1 == 0) {
-            token0.safeApprove(address(npm), type(uint256).max);
+            token1.safeApprove(address(npm), type(uint256).max);
             token1.safeApprove(address(swapRouter), type(uint256).max);
         }
         accountTokens[account].push(tokenId);
